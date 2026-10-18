@@ -33,11 +33,10 @@
 #   drop between echoes.
 #
 # Differences from jpos-client-as-server:
-#   - jPOS frames each message with a 4-digit ASCII decimal length
-#     (ASCIIChannel). This scenario uses the binary length prefix available
-#     today (frame_length_size: 2). To interoperate with a jPOS peer on the
-#     wire, switch to the ASCII-decimal framing option once it is available;
-#     nothing else in this file changes.
+#   - Framing and spec match jPOS: the io gears use the 4-digit ASCII decimal
+#     length prefix of ASCIIChannel (frame_length_encoding: ascii_decimal) and
+#     the codecs use iso8583-v87-ascii-jpos.yaml, the ISO87APackager-compatible
+#     spec. Both were verified against the real jPOS examples (test/e2e/jpos_interop).
 #   - The jPOS simulator sends two test echoes and shuts down. This scenario
 #     sends one echo every 30 seconds, which is closer to a real client.
 #   - The jPOS IsoListener answers every request it is handed. This one answers
@@ -59,8 +58,8 @@ gears:
     config:
       mode: "client"
       connect: "localhost:8888"
-      frame_length_size: 2          # binary prefix; jPOS wire compatibility needs ASCII-decimal framing
-      frame_length_endian: "big"
+      frame_length_encoding: "ascii_decimal"   # jPOS ASCIIChannel: 4 ASCII digits of length
+      frame_length_size: 4
       encoding: "ascii"
       reconnect_wait: "1s"          # jPOS: <reconnect-delay>1000</reconnect-delay>
       idle_timeout: "2m"            # longer than the 30s echo interval below
@@ -87,7 +86,7 @@ gears:
   - name: "encode_request"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
       direction: "encode"
       on_error: "reject"
 
@@ -95,7 +94,7 @@ gears:
   - name: "decode_inbound"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
       direction: "decode"
       on_error: "reject"
 
@@ -122,7 +121,7 @@ gears:
   - name: "encode_reply"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
       direction: "encode"
       on_error: "reject"
 

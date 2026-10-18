@@ -1,0 +1,121 @@
+# jPOS-style ISO 8583 server that sends a logon to every client that connects.
+#
+# This is the fluxrig counterpart of the `jpos-server-as-client` jPOS example.
+# There, an ISOServerAcceptEvent listener (`Logon`) writes a 0800 network
+# management request to each client the moment it connects: DE7 (date and time),
+# DE11 (trace number) and DE70 = 001 (logon). The client application replies
+# with a 0810. Meanwhile the server still answers the client's own requests,
+# exactly like jpos_style_server_respond.yaml, which this scenario extends.
+#
+#   :8888 --> server_io.out --> decode --> respond --> encode --> server_io.in      (answers requests)
+#             server_io.out_conn --> logon --> encode --> server_io.in                (logon on connect)
+#
+# How the pieces fit:
+#   - `emit_conn_events: true` makes io_iso8583 (server mode) emit a small event
+#     on its `out_conn` port when a connection is accepted and when it closes.
+#     The event has no payload; the metadata carries `conn.id`, `conn.event`
+#     (`up` or `down`), `peer.ip` and `peer.port`. The connection is already
+#     registered when the event is emitted, so a message addressed to that
+#     `conn.id` can be sent at once.
+#   - `logon` keeps only the `up` events, builds the 0800 fields and leaves the
+#     metadata alone, so `conn.id` still points at the new connection when the
+#     message reaches the encoder and then `server_io.in`.
+#   - The encoder is shared by the two paths: two wires end on `encode.in`.
+#   - The client's 0810 answer to the logon comes back on `server_io.out`; the
+#     respond step ignores anything that is not a 0800, so it is dropped (add a
+#     gear on a decode.out wire if you want to inspect it).
+#   - DE11 is a counter that wraps from 999999 back to 1, as the jPOS Logon
+#     (a zero padded AtomicLong) would.
+#
+# Differences from jpos-server-as-client:
+#   - There is no equivalent of `getLastConnectedISOChannel()`; the event names
+#     the connection explicitly, so two clients connecting at the same time cannot
+#     get each other's logon.
+#   - Frames use the 4-digit ASCII decimal length (ASCIIChannel) and the
+#     jPOS-compatible spec, so a real jPOS peer can talk to this scenario.
+#
+# Run it from the repository root (the spec path below is relative to it), then
+# connect a client to localhost:8888, for example the jpos-client-as-server example.
+
+meta:
+  name: "jpos_style_server_logon"
+  version: "1.0.0"
+
+gears:
+  - name: "server_io"
+    type: "io_iso8583"
+    config:
+      mode: "server"
+      bind: ":8888"
+      frame_length_encoding: "ascii_decimal"   # jPOS ASCIIChannel: 4 ASCII digits of length
+      frame_length_size: 4
+      encoding: "ascii"
+      strict_connection_routing: true
+      emit_conn_events: true        # publish out_conn when a connection comes and goes
+      idle_timeout: "5m"
+
+  - name: "decode"
+    type: "codec_iso8583"
+    config:
+      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      direction: "decode"
+      on_error: "reject"
+
+  # Answer 0800 with 0810 and DE39 = 00 (see jpos_style_server_respond.yaml).
+  - name: "respond"
+    type: "bento"
+    config:
+      ports:
+        inputs: ["in"]
+        outputs: ["out"]
+      bento:
+        pipeline:
+          processors:
+            - mapping: |
+                root = if meta("iso8583.mti") == "0800" { this } else { deleted() }
+            - mapping: |
+                root = this
+                meta "iso8583.mti" = "0810"
+                root.iso8583.field."39" = "00"
+
+  # Turn a connection `up` event into a logon 0800 for that connection.
+  - name: "logon"
+    type: "bento"
+    config:
+      ports:
+        inputs: ["in"]
+        outputs: ["out"]
+      bento:
+        pipeline:
+          processors:
+            - mapping: |
+                root = if meta("conn.event") == "up" { {} } else { deleted() }
+                meta "iso8583.mti" = "0800"
+                # DE7: MMDDhhmmss in UTC. DE11: 6 digit trace number, 1..999999 then wraps.
+                root.iso8583.field."7" = now().ts_strftime("%m%d%H%M%S", "UTC")
+                root.iso8583.field."11" = "%06d".format(counter(min: 1, max: 999999))
+                root.iso8583.field."70" = "001"      # logon
+
+  - name: "encode"
+    type: "codec_iso8583"
+    config:
+      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      direction: "encode"
+      on_error: "reject"
+
+wires:
+  - from: "server_io.out"
+    to: "decode.in"
+  - from: "decode.out"
+    to: "respond.in"
+  - from: "respond.out"
+    to: "encode.in"
+
+  # ── Logon on connect ──
+  - from: "server_io.out_conn"
+    to: "logon.in"
+  - from: "logon.out"
+    to: "encode.in"
+
+  - from: "encode.out"
+    to: "server_io.in"
