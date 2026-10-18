@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | [v0.7.0](#v070) | 2026-08-01 | Delivered | Payment switch: Conductor gear, gear manifests, ISO 8583 TLS |
 
 
+## [Unreleased]
+
+### Added
+- **`io_iso8583` server mode can announce connections.** Set
+  `emit_conn_events: true` (default `false`) and the gear emits an
+  empty-payload event message on a new `out_conn` port when a connection is
+  accepted and again when it closes. The metadata carries `conn.id`,
+  `conn.event` (`up` or `down`), `peer.ip` and `peer.port`, so a scenario can
+  send a logon `0800` to a new connection by reusing its `conn.id`. Wire
+  `out_conn` only when the option is on; nothing is emitted otherwise.
+
 ## [v0.13.0] - 2026-10-20 {#v0130}
 
 **Before upgrading,** follow [Upgrading fluxrig: from v0.12 to v0.13](https://fluxrig.org/docs/reference/operations/upgrading#v012-to-v013). It gives the steps in order. The BREAKING entries below explain each change.
@@ -313,7 +324,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   import now takes a cross-process lock on `index.lock`, re-reads the file,
   merges its entry into what is on disk, and replaces the file atomically, so a
   reader never sees a torn index either.
-
 ## [v0.12.0] - 2026-09-28 {#v0120}
 
 **Before upgrading.** Most of the changes below are self-resolving once
