@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | [v0.7.0](#v070) | 2026-08-01 | Delivered | Payment switch: Conductor gear, gear manifests, ISO 8583 TLS |
 
 
+## [Unreleased]
+
+### Fixed
+- **`io_iso8583` `tpdu_swap` now does what it documents.** With `tpdu_enabled`,
+  `preserve_headers` and a 5 byte TPDU, a server reply now carries the TPDU with
+  its destination and source addresses exchanged (`60 DDDD SSSS` becomes
+  `60 SSSS DDDD`). Before, the option was never read and the reply carried the
+  request's TPDU unchanged. Set `tpdu_swap: false` to keep the old behavior.
+- **`io_iso8583` client mode keeps a preserved binary header valid.** The header
+  is stored hex-encoded in `iso8583.raw_header`, as in server mode. A header with
+  bytes of 0x80 or above made the message fail validation.
+
 ## [v0.12.0] - 2026-09-28 {#v0120}
 
 **Before upgrading.** Most of the changes below are self-resolving once
