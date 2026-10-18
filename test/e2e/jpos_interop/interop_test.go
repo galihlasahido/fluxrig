@@ -4,7 +4,10 @@
 package jposinterop
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"net"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -291,4 +294,41 @@ func TestE2_JposServerAsClientLogonToFluxrigClient(t *testing.T) {
 	poll(t, waitTimeout(), "fluxrig to print the logon request", func() bool {
 		return strings.Contains(f.rack.output(), `"70":"001"`)
 	})
+}
+
+// F: not jPOS, but the other framings seen on real links, through a real Rack: a
+// little endian binary length, a TPDU header (EDC terminals) and an ETX trailer,
+// with raw bytes on the wire. The server scenario is jpos_style_server_respond.
+func TestF_EdcStyleFraming(t *testing.T) {
+	prepare(t)
+	srv := freePort(t)
+	noLeftovers(t, srv)
+	sc := scenarioText(t, "jpos_style_server_respond.yaml", map[string]int{"8888": srv})
+	sc = replaceScenario(t, sc, "      frame_length_encoding: \"ascii_decimal\"   # jPOS ASCIIChannel: 4 ASCII digits of length\n      frame_length_size: 4\n",
+		"      frame_length_size: 2\n      frame_length_endian: \"little\"\n      tpdu_enabled: true\n      preserve_headers: true\n      frame_trailer: \"03\"\n")
+	startFluxrig(t, sc)
+
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", srv), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	frame := func(tpdu []byte, msg string) []byte {
+		n := len(tpdu) + len(msg)
+		out := append([]byte{byte(n), byte(n >> 8)}, tpdu...)
+		return append(append(out, msg...), 0x03)
+	}
+	req := frame([]byte{0x60, 0x00, 0x03, 0x00, 0x01}, "0800"+"2220000000000000"+"180000"+"1018234629"+"000042")
+	want := frame([]byte{0x60, 0x00, 0x01, 0x00, 0x03}, "0810"+"2220000002000000"+"180000"+"1018234629"+"000042"+"00")
+	if _, err := conn.Write(req); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(waitTimeout()))
+	got := make([]byte, len(want))
+	if _, err := io.ReadFull(conn, got); err != nil {
+		t.Fatalf("reading the reply: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("reply on the wire\n got %q\nwant %q", got, want)
+	}
 }

@@ -27,6 +27,9 @@ modules (offline).
 | D | two `jpos-client` runs | `jpos_style_multi_port.yaml` | each port answers its own 21 echoes (DE63 marks the port) |
 | E1 | `jpos-client-as-server` | `jpos_style_server_logon.yaml` | on connect jPOS receives `0800` DE70=`001`, answers `0810/00`; a second client gets its own logon |
 | E2 | `jpos-server-as-client` | `jpos_style_client_serves_requests.yaml` | jPOS sends the logon, fluxrig answers `0810/00` on the same connection |
+| F | none (raw bytes) | `jpos_style_server_respond.yaml` with little endian length, TPDU, ETX trailer | reply is byte-exact: length, TPDU with swapped addresses, message, ETX |
+
+F is not a jPOS test; it covers the EDC-style framing variants through a real Rack.
 
 ## How it works
 
@@ -70,6 +73,12 @@ modules (offline).
 
 ## What this found
 
-See the commit history of this directory and the notes in `examples/scenarios`.
-`jpos_style_server_logon.yaml` is new: the fluxrig counterpart of
-`jpos-server-as-client` (`emit_conn_events`), which had no example.
+* No fluxrig defect showed up on the jPOS wire itself: framing, the compat spec,
+  conductor forwarding, multi-port and `emit_conn_events` all interoperate.
+* The example fixtures were the problem: `cfg/echo_r` (see 2 above), the plain-http
+  repository in the client poms, `shutdown=true` in `jpos-client-as-server`, and
+  the forwarding scenario's DE41 correlation key (see 5), which a jPOS echo lacks.
+* `jpos_style_server_logon.yaml` is new: the fluxrig counterpart of
+  `jpos-server-as-client`, which had no example.
+* Framing variants checked while doing this (`frame_trailer`, TPDU swap, hex-safe
+  client header) are covered by `pkg/gears/native/iso8583/io/variants_test.go`.
