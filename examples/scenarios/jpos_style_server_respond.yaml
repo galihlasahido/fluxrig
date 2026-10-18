@@ -23,11 +23,10 @@
 #     that is not changed is echoed, which is what jPOS `setResponseMTI()` does.
 #
 # Differences from jpos-server:
-#   - jPOS frames each message with a 4-digit ASCII decimal length
-#     (ASCIIChannel). This scenario uses the binary length prefix that is
-#     available today (frame_length_size: 2). To interoperate with a jPOS
-#     peer on the wire, switch to the ASCII-decimal framing option once it is
-#     available and set it on the io gears; nothing else in this file changes.
+#   - Framing and spec match jPOS: the io gears use the 4-digit ASCII decimal
+#     length prefix of ASCIIChannel (frame_length_encoding: ascii_decimal) and
+#     the codecs use iso8583-v87-ascii-jpos.yaml, the ISO87APackager-compatible
+#     spec. Both were verified against the real jPOS examples (test/e2e/jpos_interop).
 #   - The jPOS Selector routes on MTI + DE3 ("0800" + "180000"). This example
 #     answers every 0800. To match jPOS exactly, make the first mapping drop
 #     anything whose `this.iso8583.field."3"` is not "180000".
@@ -49,8 +48,8 @@ gears:
     config:
       mode: "server"
       bind: ":8888"
-      frame_length_size: 2          # binary prefix; jPOS wire compatibility needs ASCII-decimal framing
-      frame_length_endian: "big"
+      frame_length_encoding: "ascii_decimal"   # jPOS ASCIIChannel: 4 ASCII digits of length
+      frame_length_size: 4
       encoding: "ascii"
       strict_connection_routing: true   # a reply only ever goes to its own connection
       # A jPOS client keeps the link open with periodic echoes. A connection
@@ -61,7 +60,7 @@ gears:
   - name: "decode"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
       direction: "decode"
       on_error: "reject"
 
@@ -86,7 +85,7 @@ gears:
   - name: "encode"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
       direction: "encode"
       on_error: "reject"
 

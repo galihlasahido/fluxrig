@@ -29,11 +29,10 @@
 #   not from running two listeners.
 #
 # Differences from jpos-server-multi-port:
-#   - jPOS frames each message with a 4-digit ASCII decimal length
-#     (ASCIIChannel). This scenario uses the binary length prefix available
-#     today (frame_length_size: 2). To interoperate with a jPOS peer on the
-#     wire, switch to the ASCII-decimal framing option once it is available;
-#     nothing else in this file changes.
+#   - Framing and spec match jPOS: the io gears use the 4-digit ASCII decimal
+#     length prefix of ASCIIChannel (frame_length_encoding: ascii_decimal) and
+#     the codecs use iso8583-v87-ascii-jpos.yaml, the ISO87APackager-compatible
+#     spec. Both were verified against the real jPOS examples (test/e2e/jpos_interop).
 #   - The jPOS Selector routes on MTI + DE3 ("0800" + "180000"). This example
 #     answers every 0800.
 #   - A request that is not a 0800 is dropped, with no reply.
@@ -52,8 +51,8 @@ gears:
     config:
       mode: "server"
       bind: ":8888"
-      frame_length_size: 2          # binary prefix; jPOS wire compatibility needs ASCII-decimal framing
-      frame_length_endian: "big"
+      frame_length_encoding: "ascii_decimal"   # jPOS ASCIIChannel: 4 ASCII digits of length
+      frame_length_size: 4
       encoding: "ascii"
       strict_connection_routing: true
       idle_timeout: "5m"            # raise for long-lived clients that only send periodic echoes
@@ -61,7 +60,7 @@ gears:
   - name: "decode_8888"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
       direction: "decode"
       on_error: "reject"
 
@@ -85,7 +84,7 @@ gears:
   - name: "encode_8888"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
       direction: "encode"
       on_error: "reject"
 
@@ -95,8 +94,8 @@ gears:
     config:
       mode: "server"
       bind: ":8889"
-      frame_length_size: 2
-      frame_length_endian: "big"
+      frame_length_encoding: "ascii_decimal"   # jPOS ASCIIChannel: 4 ASCII digits of length
+      frame_length_size: 4
       encoding: "ascii"
       strict_connection_routing: true
       idle_timeout: "5m"
@@ -104,7 +103,7 @@ gears:
   - name: "decode_8889"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
       direction: "decode"
       on_error: "reject"
 
@@ -128,7 +127,7 @@ gears:
   - name: "encode_8889"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
       direction: "encode"
       on_error: "reject"
 
