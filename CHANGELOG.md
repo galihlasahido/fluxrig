@@ -63,6 +63,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the padded one. Both legs of an exchange decoded by this codec keep
   agreeing; a value that reaches a key from outside the codec (for example an
   HTTP leg) now matches the wire form instead of the trimmed one.
+### Fixed
+- **`io_iso8583` `tpdu_swap` now does what it documents.** With `tpdu_enabled`,
+  `preserve_headers` and a 5 byte TPDU, a server reply now carries the TPDU with
+  its destination and source addresses exchanged (`60 DDDD SSSS` becomes
+  `60 SSSS DDDD`). Before, the option was never read and the reply carried the
+  request's TPDU unchanged. Set `tpdu_swap: false` to keep the old behavior.
+- **`io_iso8583` client mode keeps a preserved binary header valid.** The header
+  is stored hex-encoded in `iso8583.raw_header`, as in server mode. A header with
+  bytes of 0x80 or above made the message fail validation.
 
 ## [v0.12.0] - 2026-09-28 {#v0120}
 
