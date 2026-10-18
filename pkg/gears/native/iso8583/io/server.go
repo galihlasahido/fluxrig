@@ -202,6 +202,9 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		}
 	}()
 
+	if err := s.config.applyKeepAlive(conn); err != nil {
+		s.log.Warn("failed to set TCP keep-alive", "conn_id", connID, "error", err)
+	}
 	s.log.Info("connection accepted", "conn_id", connID, "remote", conn.RemoteAddr())
 	if s.connEvent != nil {
 		s.connEvent(true, connID, conn.RemoteAddr())
