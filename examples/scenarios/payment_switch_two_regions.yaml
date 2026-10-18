@@ -33,7 +33,7 @@ gears:
       on_error: "reject"
 
   - name: "conductor-east"
-    type: "conductor"          # [Roadmap]
+    type: "conductor"          # implemented (stable); only the non-memory valet stores are [Roadmap]
     deploy: "rack-east"
     config:
       # This Conductor's name in the mesh. Stamped in-band (conductor.origin)
@@ -42,7 +42,10 @@ gears:
       origin: "east"
       # Correlation engine (valet). One store per Conductor.
       valet:
-        store: "memory"          # memory | local_durable [Roadmap] | shared
+        # Only "memory" is implemented: tickets are lost on restart. The values
+        # "local_durable" and "shared" are [Roadmap] and make Init fail with
+        # "valet store ... is not implemented yet".
+        store: "memory"          # memory | local_durable [Roadmap] | shared [Roadmap]
         default_ttl: "30s"       # open-ticket timeout (transaction deadline)
         retain_after_close: "5s" # replay window for a lost-response retransmission
       # The tuple that identifies one transaction (never a bare STAN, which wraps
@@ -214,7 +217,7 @@ gears:
       on_error: "reject"
 
   - name: "conductor-west"
-    type: "conductor"          # [Roadmap]
+    type: "conductor"          # implemented (stable)
     deploy: "rack-west"
     config:
       origin: "west"

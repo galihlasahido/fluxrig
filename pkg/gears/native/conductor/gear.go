@@ -19,6 +19,40 @@
 //
 // Port names use underscores, never dots: a dot in a wire endpoint separates
 // rack / gear / port levels, so a port name must not contain one.
+//
+// # Responses are never authored here
+//
+// The conductor only forwards what it is given. A timeout, a missing route, no
+// available destination, a request lacking a correlation field, an unmatched
+// reply or an invalid origin each leave on the error port as the ORIGINAL
+// request, unchanged apart from the error.reason metadata. Nothing on that
+// port is a response. A downstream gear (typically a bento mapping) must turn
+// it into a decline: flip the MTI to its response value and set the response
+// code, then hand it to the reply encoder. See the decline-builder gear in
+// test/robot/suites/conductor/scenarios/switch_proxied.yaml.
+//
+// # Correlation key
+//
+// correlation_key is a tuple of structured fields (Data) read with dotted-path
+// semantics. Metadata, including the conn.id stamped by io_iso8583, is NOT
+// part of the key. A key made of a bare STAN is not unique: two connections
+// that send the same STAN produce the same key, and the second request is
+// treated as a retransmission of the first (it is absorbed, never routed, and
+// gets no reply). Include a field that differs per client, such as the
+// terminal id (DE 41) or the acquirer (DE 32), and the transmission date and
+// time (DE 7). When an absorbed request arrives on a different conn.id than the
+// open ticket, the conductor logs a Warn naming the key; an ordinary
+// retransmission on the same connection is logged at Debug only.
+//
+// # Ticket store and timeouts
+//
+// The valet ticket store is memory only. valet.store accepts "memory" (the
+// default); "local_durable" and "shared" are listed in the schema but Init
+// rejects them with: conductor: valet store "<name>" is not implemented yet
+// (only "memory"). In-flight tickets therefore do not survive a restart.
+// valet.default_ttl is the open-ticket deadline and defaults to 1m;
+// valet.retain_after_close, the window in which a redeemed outcome is replayed
+// to a retransmission, defaults to 5s. Both are config fields.
 package conductor
 
 import (
@@ -57,7 +91,20 @@ const (
 	// serves the request knows to return the finished response on
 	// out_response_<origin>.
 	metaOrigin = "conductor.origin"
+
+	// metaConnID is the connection identity io_iso8583 stamps on every frame.
+	// It is only read here, to tell a retransmission from a key collision.
+	metaConnID = "conn.id"
 )
+
+// ticketConnID returns the connection a parked request arrived on, or "" when
+// the ticket carries none.
+func ticketConnID(t *valet.Ticket) string {
+	if t == nil {
+		return ""
+	}
+	return t.ReturnCtx[metaConnID]
+}
 
 // maxConcurrentExpiryEmits caps how many timed-out tickets may be published on
 // the error port at once. valet fires each expiry on its own timer goroutine,
@@ -387,8 +434,17 @@ func (g *Gear) handleRequest(ctx context.Context, msg *fluxmsg.FluxMsg) error {
 		return nil
 	case valet.AttachedOpen:
 		// Retransmission of an in-flight request: absorb it, the one reply
-		// answers both attempts.
-		g.logger.Debug("retransmission attached", "key", key, "route", rt.name)
+		// answers both attempts. A plain retransmission stays at Debug: a slow
+		// host makes every terminal retransmit, and one line per retry would
+		// flood the log. The same key arriving from a different connection
+		// is not a retransmission but a correlation key collision (the key
+		// has no per-connection field), so that case alone is a Warn.
+		if prev, cur := ticketConnID(ticket), msg.Metadata[metaConnID]; prev != "" && cur != "" && prev != cur {
+			g.logger.Warn("request absorbed as retransmission but arrived on a different connection: correlation_key does not distinguish connections",
+				"key", key, "route", rt.name, "open_conn_id", prev, "conn_id", cur)
+		} else {
+			g.logger.Debug("retransmission attached", "key", key, "route", rt.name)
+		}
 		return nil
 	case valet.ReplayedClosed:
 		// Retransmission after redemption: rebuild the finished response from

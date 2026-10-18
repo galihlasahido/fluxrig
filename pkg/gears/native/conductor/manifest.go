@@ -49,7 +49,7 @@ const configSchemaJSON = `{
       "type": "array",
       "items": { "type": "string" },
       "minItems": 1,
-      "description": "Dotted-path or alias fields forming the unique per-transaction key (e.g. iso8583.field.11)."
+      "description": "Dotted-path or alias fields forming the unique per-transaction key (e.g. iso8583.field.11). Read from the structured data only: conn.id is not part of the key. A STAN alone is not unique across connections, because a second request with the same key is absorbed as a retransmission and gets no reply; add a per-client field such as iso8583.field.41 (terminal id) and iso8583.field.7."
     },
     "park_fields": {
       "type": "array",
@@ -86,7 +86,7 @@ const configSchemaJSON = `{
         "store": {
           "type": "string",
           "enum": ["memory", "local_durable", "shared"],
-          "description": "Ticket store. Only 'memory' is implemented; the others are [Roadmap]."
+          "description": "Ticket store. Only 'memory' is implemented (tickets are lost on restart); 'local_durable' and 'shared' are [Roadmap] and fail at Init with 'valet store is not implemented yet'."
         },
         "default_ttl": { "type": "string", "pattern": "^[0-9]+(s|ms|m|h)$", "default": "1m", "description": "open-ticket deadline when a request sets none." },
         "retain_after_close": { "type": "string", "pattern": "^[0-9]+(s|ms|m|h)$", "default": "5s", "description": "window a redeemed ticket's outcome is kept for idempotent replay." }
