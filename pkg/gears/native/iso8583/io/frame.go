@@ -4,9 +4,11 @@
 package io
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"strings"
@@ -463,14 +465,61 @@ func (c *Config) parseFrameLength(header []byte) (int, error) {
 	return length, nil
 }
 
-// encodeFrame prepends the length prefix to payload.
+// trailer returns the configured frame trailer bytes, or nil. Validate has
+// already checked that frame_trailer is valid hex.
+func (c *Config) trailer() []byte {
+	if c.FrameTrailer == "" {
+		return nil
+	}
+	tr, err := hex.DecodeString(c.FrameTrailer)
+	if err != nil {
+		return nil
+	}
+	return tr
+}
+
+// readBody reads the frame body that follows a length prefix which announced n
+// bytes (as returned by parseFrameLength) and removes the trailer. The prefix
+// covers the trailer only with frame_trailer_in_length; otherwise the trailer
+// follows the n bytes.
+func (c *Config) readBody(r io.Reader, n int) ([]byte, error) {
+	tr := c.trailer()
+	if len(tr) == 0 {
+		body := make([]byte, n)
+		if _, err := io.ReadFull(r, body); err != nil {
+			return nil, err
+		}
+		return body, nil
+	}
+	if c.FrameTrailerInLength {
+		if n <= len(tr) {
+			return nil, fmt.Errorf("invalid frame length: %d does not cover the %d byte trailer and a message", n, len(tr))
+		}
+	} else {
+		n += len(tr)
+	}
+	body := make([]byte, n)
+	if _, err := io.ReadFull(r, body); err != nil {
+		return nil, err
+	}
+	if !bytes.HasSuffix(body, tr) {
+		return nil, fmt.Errorf("invalid frame trailer: want %x, got %x", tr, body[len(body)-len(tr):])
+	}
+	return body[:len(body)-len(tr)], nil
+}
+
+// encodeFrame prepends the length prefix to payload and appends the trailer.
 func (c *Config) encodeFrame(payload []byte) ([]byte, error) {
+	tr := c.trailer()
 	totalLen := len(payload)
 	if c.FrameIncludesHeader {
 		totalLen += c.FrameLengthSize
 	}
+	if c.FrameTrailerInLength {
+		totalLen += len(tr)
+	}
 
-	frame := make([]byte, c.FrameLengthSize+len(payload))
+	frame := make([]byte, c.FrameLengthSize+len(payload)+len(tr))
 	if c.FrameLengthEncoding == FrameEncodingASCIIDecimal {
 		limit := 1
 		for i := 0; i < c.FrameLengthSize; i++ {
@@ -498,5 +547,23 @@ func (c *Config) encodeFrame(payload []byte) ([]byte, error) {
 		}
 	}
 	copy(frame[c.FrameLengthSize:], payload)
+	copy(frame[c.FrameLengthSize+len(payload):], tr)
 	return frame, nil
+}
+
+// tpduSize is the length of a standard TPDU: 1 byte of ID, 2 bytes of
+// destination address, 2 bytes of source address.
+const tpduSize = 5
+
+// swapTPDU returns h with the destination and source addresses of its leading
+// TPDU exchanged, as a reply to a terminal requires (60 DDDD SSSS becomes
+// 60 SSSS DDDD). A header that is not a standard 5 byte TPDU is returned as is.
+func swapTPDU(h []byte, tpduLen int) []byte {
+	if tpduLen != tpduSize || len(h) < tpduSize {
+		return h
+	}
+	out := append([]byte(nil), h...)
+	copy(out[1:3], h[3:5])
+	copy(out[3:5], h[1:3])
+	return out
 }

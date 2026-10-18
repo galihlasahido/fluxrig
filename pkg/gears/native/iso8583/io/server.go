@@ -317,8 +317,8 @@ func (s *Server) readFrame(conn net.Conn) ([]byte, error) {
 	if err := setReadDeadline(conn, time.Duration(s.config.ReadTimeout)); err != nil {
 		return nil, err
 	}
-	payload := make([]byte, length)
-	if _, err := io.ReadFull(conn, payload); err != nil {
+	payload, err := s.config.readBody(conn, length)
+	if err != nil {
 		return nil, err
 	}
 
@@ -380,6 +380,11 @@ func (s *Server) Process(ctx context.Context, msg *fluxmsg.FluxMsg) (*fluxmsg.Fl
 	if s.config.PreserveHeaders {
 		if raw, ok := msg.Metadata["iso8583.raw_header"]; ok {
 			header = decodeRawHeader(raw)
+			// Everything a server writes answers a client: swap the TPDU
+			// addresses so the reply is routed back to the terminal.
+			if s.config.TPDUEnabled && s.config.TPDUSwap {
+				header = swapTPDU(header, s.config.TPDULength)
+			}
 		}
 	}
 

@@ -52,6 +52,7 @@ func (g *Gear) Init(ctx sdk.GearContext) error {
 		"frame_length_size", cfg.FrameLengthSize,
 		"frame_length_endian", cfg.FrameLengthEndian,
 		"frame_length_encoding", cfg.FrameLengthEncoding,
+		"frame_trailer", cfg.FrameTrailer,
 		"protocol_header_size", cfg.ProtocolHeaderSize,
 		"encoding", cfg.Encoding,
 		"tpdu", cfg.TPDUEnabled,

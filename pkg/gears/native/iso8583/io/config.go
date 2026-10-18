@@ -5,6 +5,7 @@ package io
 
 import (
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -81,6 +82,15 @@ type Config struct {
 	// FrameLengthEndian: Endianness of the length prefix ("big" or "little"). Default: "big". Ignored for "ascii_decimal".
 	FrameLengthEndian string `json:"frame_length_endian" mapstructure:"frame_length_endian"`
 
+	// FrameTrailer: bytes (hex, e.g. "03" for ETX) that end every frame, after the
+	// ISO 8583 message. Written on egress; on ingress the frame must end with them
+	// (otherwise the frame is rejected) and they are removed before the message is
+	// emitted. Default: none.
+	FrameTrailer string `json:"frame_trailer" mapstructure:"frame_trailer"`
+	// FrameTrailerInLength: whether the length prefix counts the trailer bytes.
+	// Default: false (the prefix covers header and message only).
+	FrameTrailerInLength bool `json:"frame_trailer_in_length" mapstructure:"frame_trailer_in_length"`
+
 	// Advanced Framing (Variant Support)
 	// Variant: Protocol variant ("generic", "visa", "mastercard"). Default: "generic".
 	Variant string `json:"variant" mapstructure:"variant"`
@@ -100,7 +110,9 @@ type Config struct {
 	TPDUEnabled bool `json:"tpdu_enabled" mapstructure:"tpdu_enabled"`
 	// TPDULength: TPDU header length (typically 5 bytes). Default: 5.
 	TPDULength int `json:"tpdu_length" mapstructure:"tpdu_length"`
-	// TPDUSwap: Swap source/destination in response. Default: true.
+	// TPDUSwap: Swap the destination and source addresses of the TPDU in the
+	// header written back by server mode (needs tpdu_enabled, preserve_headers and
+	// a 5 byte TPDU). Default: true.
 	TPDUSwap bool `json:"tpdu_swap" mapstructure:"tpdu_swap"`
 
 	// Heuristic Validation (Layer 1.5)
@@ -166,6 +178,8 @@ const (
 	DefaultASCIIFrameLengthSize = 4
 	// MaxASCIIFrameLengthSize bounds the digit count so the value fits an int.
 	MaxASCIIFrameLengthSize = 9
+	// MaxFrameTrailerSize bounds frame_trailer, in bytes.
+	MaxFrameTrailerSize = 8
 	// MaxFrameLength is the largest accepted frame body, in bytes.
 	MaxFrameLength        = 65535
 	DefaultTPDULength     = 5
@@ -314,6 +328,16 @@ func (c *Config) Validate() error {
 		}
 	default:
 		return fmt.Errorf("invalid frame_length_encoding: %s (must be 'binary' or 'ascii_decimal')", c.FrameLengthEncoding)
+	}
+
+	if c.FrameTrailer != "" {
+		tr, err := hex.DecodeString(c.FrameTrailer)
+		if err != nil {
+			return fmt.Errorf("frame_trailer must be hex bytes (e.g. \"03\"): %w", err)
+		}
+		if len(tr) > MaxFrameTrailerSize {
+			return fmt.Errorf("frame_trailer is %d bytes, at most %d are accepted", len(tr), MaxFrameTrailerSize)
+		}
 	}
 
 	if c.TCPKeepAlivePeriod < 0 {
