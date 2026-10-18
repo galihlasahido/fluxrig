@@ -352,6 +352,9 @@ func (g *Gear) decode(msg *fluxmsg.FluxMsg) (_ string, _ []int, err error) {
 		}
 
 		raw, rawErr := isoMsg.GetBytes(i)
+		if fld := isoMsg.GetField(i); fld != nil {
+			val = restoreFixedPadding(val, fld.Spec())
+		}
 		stored := storable(val, raw, rawErr)
 
 		alias, ok := g.meta.Aliases[i]
@@ -399,6 +402,7 @@ func (g *Gear) decode(msg *fluxmsg.FluxMsg) (_ string, _ []int, err error) {
 					if subRawErr != nil {
 						return
 					}
+					subVal = restoreFixedPadding(subVal, subField.Spec())
 					subStored := storable(subVal, subRaw, subRawErr)
 
 					// 1. Raw Subfield ID
@@ -418,6 +422,37 @@ func (g *Gear) decode(msg *fluxmsg.FluxMsg) (_ string, _ []int, err error) {
 	g.preserveUnknownTags(isoMsg, msg)
 
 	return mti, presentFields, nil
+}
+
+// restoreFixedPadding gives a fixed-length field back the leading pad characters
+// moov's unpacker trimmed. moov calls Pad.Unpad on every unpack and a left
+// padder trims every leading pad character, so a padded field such as DE11
+// "000042" decodes as "42" and an all-zero "000000" as "". When the spec declares
+// a Left pad and a Fixed prefix, the wire length is the spec length, so the value
+// is padded back to it. Variable-length prefixes, right pads, no pad and values
+// that are not text are returned untouched. The pad character and the length
+// come from the spec; nothing is assumed.
+func restoreFixedPadding(val string, spec *field.Spec) string {
+	if spec == nil || spec.Pad == nil || spec.Pref == nil || spec.Length <= 0 {
+		return val
+	}
+	if !utf8.ValidString(val) || utf8.RuneCountInString(val) >= spec.Length {
+		return val
+	}
+	// Fixed prefixers carry no length bytes; every variable one does.
+	if lp, err := spec.Pref.EncodeLength(spec.Length, spec.Length); err != nil || len(lp) != 0 {
+		return val
+	}
+	// Tell a left padder from a right one or none by what it does to a probe.
+	pad := spec.Pad.Inspect()
+	if len(pad) == 0 {
+		return val
+	}
+	probe := spec.Pad.Pad([]byte("x"), 2)
+	if len(probe) != len(pad)+1 || string(probe[:len(pad)]) != string(pad) || probe[len(pad)] != 'x' {
+		return val
+	}
+	return strings.Repeat(string(pad), spec.Length-utf8.RuneCountInString(val)) + val
 }
 
 // patchMoovSpecForDecode patches the moovSpec to ensure all field specs have proper Enc/Pref

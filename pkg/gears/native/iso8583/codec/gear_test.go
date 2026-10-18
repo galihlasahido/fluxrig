@@ -116,7 +116,9 @@ func TestASCII_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	val, _ := processed.Get("card.pan")
-	assert.Equal(t, "4111111111111111", val)
+	// generic_ascii declares DE2 as a fixed 19-character left-padded field, so
+	// the decoded value keeps the three wire zeros.
+	assert.Equal(t, "0004111111111111111", val)
 	val, _ = processed.Get("stan")
 	assert.Equal(t, "111222", val)
 }
@@ -144,10 +146,9 @@ func TestASCII_AllFields(t *testing.T) {
 	require.NoError(t, err)
 
 	v, _ := res.Get("card.pan")
-	assert.Equal(t, "5500000000000004", v)
+	assert.Equal(t, "0005500000000000004", v) // fixed 19, left-padded in the spec
 	v, _ = res.Get("amount")
-	// moov-io Numeric may strip leading zeros; verify semantic value
-	assert.Contains(t, v, "1500")
+	assert.Equal(t, "000000001500", v)
 	v, _ = res.Get("terminal_id")
 	assert.Equal(t, "TERM0001", v)
 	assert.Equal(t, "0200", res.Metadata["iso8583.mti"])

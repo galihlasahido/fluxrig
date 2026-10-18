@@ -26,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | [v0.7.0](#v070) | 2026-08-01 | Delivered | Payment switch: Conductor gear, gear manifests, ISO 8583 TLS |
 
 
+## [Unreleased]
+
+### Changed
+
+- **`codec_iso8583` keeps the leading zeros of left-padded fixed-length fields
+  on decode, so the decoded value and any correlation key built from it change
+  from `"42"` to `"000042"`.** A spec that declares `padding: {type: Left, ...}`
+  on a fixed-length field (DE11 STAN, DE7, amounts) used to decode a wire value
+  of `000042` as `42`, and an all-zero `000000` as an empty string, because the
+  Moov unpacker trims every leading pad character. The codec now pads the value
+  back to the field's declared length, so pack followed by unpack is lossless.
+  Variable-length (`LL`/`LLL`) fields, right pads and fields with no padding
+  are unchanged. A coatcheck or conductor correlation key, a route `match`, a
+  stored key or an assertion written against the unpadded form must be updated
+  to the padded one. Both legs of an exchange decoded by this codec keep
+  agreeing; a value that reaches a key from outside the codec (for example an
+  HTTP leg) now matches the wire form instead of the trimmed one.
+
 ## [v0.12.0] - 2026-09-28 {#v0120}
 
 **Before upgrading.** Most of the changes below are self-resolving once
