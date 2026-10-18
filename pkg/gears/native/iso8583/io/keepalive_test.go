@@ -155,7 +155,7 @@ func TestKeepAlive_ServerAcceptedSocket(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		waitFor(t, "server conn", func() bool { return serverConnCount(s) == 1 })
+		waitForKeepAlive(t, "server conn", func() bool { return serverConnCount(s) == 1 })
 		s.conns.Range(func(_, v any) bool {
 			if got := keepAliveOn(t, v.(*Connection).conn); got != enabled {
 				t.Errorf("tcp_keepalive=%v: SO_KEEPALIVE on accepted socket = %v", enabled, got)
@@ -185,7 +185,7 @@ func TestIdleTimeout_InboundFrameResetsTimer_Server(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = c.Close() }()
-	waitFor(t, "server conn", func() bool { return serverConnCount(s) == 1 })
+	waitForKeepAlive(t, "server conn", func() bool { return serverConnCount(s) == 1 })
 
 	// Keep the link busy for three idle periods.
 	start := time.Now()
@@ -203,7 +203,7 @@ func TestIdleTimeout_InboundFrameResetsTimer_Server(t *testing.T) {
 	}
 
 	// Silence: now idle_timeout must close it.
-	waitFor(t, "idle close", func() bool { return serverConnCount(s) == 0 })
+	waitForKeepAlive(t, "idle close", func() bool { return serverConnCount(s) == 0 })
 }
 
 func TestIdleTimeout_InboundFrameResetsTimer_Client(t *testing.T) {
@@ -240,7 +240,7 @@ func TestIdleTimeout_InboundFrameResetsTimer_Client(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = peer.Close() }()
-	waitFor(t, "client up", func() bool { return up.Load() == 1 })
+	waitForKeepAlive(t, "client up", func() bool { return up.Load() == 1 })
 	if !keepAliveOn(t, cl.connPtr.Load().conn) {
 		t.Error("SO_KEEPALIVE not set on the dialed socket")
 	}
@@ -259,11 +259,11 @@ func TestIdleTimeout_InboundFrameResetsTimer_Client(t *testing.T) {
 		t.Fatal("no frames emitted")
 	}
 
-	waitFor(t, "idle close", func() bool { return down.Load() == 1 })
+	waitForKeepAlive(t, "idle close", func() bool { return down.Load() == 1 })
 }
 
 // waitFor polls cond until it holds or the deadline passes.
-func waitFor(t *testing.T, what string, cond func() bool) {
+func waitForKeepAlive(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
