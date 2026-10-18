@@ -27,7 +27,7 @@ ifeq ($(shell uname -s),Darwin)
 	LDFLAGS += -extldflags=-Wl,-w
 endif
 
-.PHONY: all build build-bin test lint clean distclean help catalog
+.PHONY: all build build-bin test test-jpos-interop lint clean distclean help catalog
 
 all: lint test build
 
@@ -146,6 +146,9 @@ install: build ## Install binaries to $GOPATH/bin
 
 verify: build ## Run quick E2E verification script
 	@./test/debug_e2e.sh
+
+test-jpos-interop: ## Run the real jPOS interop suite (needs java, mvn, network; see test/e2e/jpos_interop/README.md)
+	FLUXRIG_JPOS_INTEROP=1 go test -count=1 -v -timeout 15m ./test/e2e/jpos_interop/
 
 regression: build ## Run full E2E regression suite (Consolidated Runner)
 	@echo "--------------------------------------------------"
