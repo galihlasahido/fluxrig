@@ -61,6 +61,7 @@ type mockCtx struct {
 	emitter  sdk.PortEmitter
 	bindings map[string]sdk.PortBinding
 	cp       any
+	logger   *slog.Logger
 }
 
 func (m *mockCtx) Bindings() map[string]sdk.PortBinding { return m.bindings }
@@ -69,7 +70,12 @@ func (m *mockCtx) Context() context.Context { return context.Background() }
 func (m *mockCtx) Config() map[string]any   { return m.cfg }
 func (m *mockCtx) GearName() string         { return "conductor-test" }
 func (m *mockCtx) MachineID() uuid.UUID     { return uuid.Nil }
-func (m *mockCtx) Logger() *slog.Logger     { return slog.Default() }
+func (m *mockCtx) Logger() *slog.Logger {
+	if m.logger != nil {
+		return m.logger
+	}
+	return slog.Default()
+}
 func (m *mockCtx) IDGen() sdk.IDGenerator   { return nil }
 func (m *mockCtx) Bus() bus.Bus             { return nil }
 func (m *mockCtx) Manager() manager.Manager { return nil }
@@ -305,6 +311,141 @@ func TestRetransmissionAbsorbed(t *testing.T) {
 	if len(emits) != 1 {
 		t.Fatalf("emits = %d, want exactly 1 (no double routing)", len(emits))
 	}
+}
+
+// recLogHandler records slog records so a test can assert on level and attrs.
+type recLogHandler struct {
+	mu   sync.Mutex
+	recs []slog.Record
+}
+
+func (h *recLogHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *recLogHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.recs = append(h.recs, r)
+	return nil
+}
+func (h *recLogHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *recLogHandler) WithGroup(string) slog.Handler      { return h }
+
+// levels returns the levels of the records whose message starts with prefix.
+func (h *recLogHandler) levels(prefix string) []slog.Level {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []slog.Level
+	for _, r := range h.recs {
+		if strings.HasPrefix(r.Message, prefix) {
+			out = append(out, r.Level)
+		}
+	}
+	return out
+}
+
+// collisionGear builds a gear whose correlation key is exactly keyFields.
+func collisionGear(t *testing.T, keyFields []any, lg *slog.Logger) (*Gear, *capEmitter) {
+	t.Helper()
+	cfg := switchConfig()
+	cfg["correlation_key"] = keyFields
+	em := &capEmitter{}
+	g := New()
+	g.clock = newFakeClock()
+	if err := g.Init(&mockCtx{cfg: cfg, emitter: em, logger: lg}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	t.Cleanup(func() { _ = g.Stop() })
+	return g, em
+}
+
+// twoTerminals returns requests with the same STAN (field 11) from two
+// different connections and terminals (fields 41).
+func twoTerminals() (*fluxmsg.FluxMsg, *fluxmsg.FluxMsg) {
+	a := request("000777")
+	a.Metadata["conn.id"] = "conn-A"
+	a.Data["41"] = "TERM000A"
+	b := request("000777")
+	b.Metadata["conn.id"] = "conn-B"
+	b.Data["41"] = "TERM000B"
+	return a, b
+}
+
+// TestKeyWithoutPerConnectionFieldCollides documents the sharp edge of a
+// correlation_key built from the STAN alone: buildKey reads only structured
+// data (never conn.id), so two connections that send the same STAN produce the
+// same key, and the second request is absorbed as a retransmission of the
+// first (AttachedOpen). It is never routed and gets no reply. Adding a second,
+// per-connection field (41 here) to the key resolves it.
+func TestKeyWithoutPerConnectionFieldCollides(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("key of field 11 only: second connection is absorbed", func(t *testing.T) {
+		rec := &recLogHandler{}
+		g, em := collisionGear(t, []any{"11"}, slog.New(rec))
+		a, b := twoTerminals()
+
+		if err := g.ProcessPort(ctx, "in", a); err != nil {
+			t.Fatalf("conn-A: %v", err)
+		}
+		if err := g.ProcessPort(ctx, "in", b); err != nil {
+			t.Fatalf("conn-B: %v", err)
+		}
+		if n := len(em.take()); n != 1 {
+			t.Fatalf("emits = %d, want 1: conn-B's request should have been absorbed", n)
+		}
+		if g.engine.InFlight() != 1 {
+			t.Fatalf("InFlight = %d, want 1 (one shared ticket)", g.engine.InFlight())
+		}
+		// The collision (same key, different connection) is a Warn.
+		if got := rec.levels("request absorbed"); len(got) != 1 || got[0] != slog.LevelWarn {
+			t.Fatalf("collision log levels = %v, want one Warn", got)
+		}
+	})
+
+	t.Run("key of fields 11 and 41: both are routed", func(t *testing.T) {
+		rec := &recLogHandler{}
+		g, em := collisionGear(t, []any{"11", "41"}, slog.New(rec))
+		a, b := twoTerminals()
+
+		if err := g.ProcessPort(ctx, "in", a); err != nil {
+			t.Fatalf("conn-A: %v", err)
+		}
+		if err := g.ProcessPort(ctx, "in", b); err != nil {
+			t.Fatalf("conn-B: %v", err)
+		}
+		if n := len(em.take()); n != 2 {
+			t.Fatalf("emits = %d, want 2: distinct terminals must not collide", n)
+		}
+		if g.engine.InFlight() != 2 {
+			t.Fatalf("InFlight = %d, want 2", g.engine.InFlight())
+		}
+		if got := rec.levels("request absorbed"); len(got) != 0 {
+			t.Fatalf("unexpected collision log: %v", got)
+		}
+	})
+
+	t.Run("true retransmission on the same connection stays quiet", func(t *testing.T) {
+		rec := &recLogHandler{}
+		g, em := collisionGear(t, []any{"11"}, slog.New(rec))
+		a, _ := twoTerminals()
+		again := request("000777")
+		again.Metadata["conn.id"] = "conn-A"
+
+		if err := g.ProcessPort(ctx, "in", a); err != nil {
+			t.Fatalf("first: %v", err)
+		}
+		if err := g.ProcessPort(ctx, "in", again); err != nil {
+			t.Fatalf("retransmission: %v", err)
+		}
+		if n := len(em.take()); n != 1 {
+			t.Fatalf("emits = %d, want 1", n)
+		}
+		if got := rec.levels("request absorbed"); len(got) != 0 {
+			t.Fatalf("a plain retransmission must not log at Warn: %v", got)
+		}
+		if got := rec.levels("retransmission attached"); len(got) != 1 || got[0] != slog.LevelDebug {
+			t.Fatalf("retransmission log levels = %v, want one Debug", got)
+		}
+	})
 }
 
 // TestFailedEmitReleasesTicketForRetry is a regression test for the finding
