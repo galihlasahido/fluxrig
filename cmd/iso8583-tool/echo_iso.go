@@ -113,7 +113,7 @@ func (c *isoResponderConfig) buildResponse(body []byte) (resp []byte, err error)
 		}
 	}()
 	req := iso8583.NewMessage(c.spec)
-	if err := req.Unpack(body); err != nil {
+	if err = req.Unpack(body); err != nil {
 		return nil, fmt.Errorf("unpack: %w", err)
 	}
 	mti, err := req.GetMTI()

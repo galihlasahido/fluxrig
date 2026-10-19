@@ -230,7 +230,7 @@ func TestIdleTimeout_InboundFrameResetsTimer_Client(t *testing.T) {
 			down.Add(1)
 		}
 	})
-	if err := cl.Start(context.Background()); err != nil {
+	if err = cl.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = cl.Stop() }()

@@ -73,7 +73,7 @@ func freePort(t *testing.T) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().(*net.TCPAddr).Port
 }
 
@@ -82,7 +82,7 @@ func portOpen(port int) bool {
 	if err != nil {
 		return false
 	}
-	c.Close()
+	_ = c.Close()
 	return true
 }
 
@@ -270,7 +270,7 @@ func start(t *testing.T, name, dir string, env []string, bin string, args ...str
 	p := &proc{t: t, name: name, cmd: cmd, log: logPath, done: make(chan struct{})}
 	go func() {
 		p.err = cmd.Wait()
-		f.Close()
+		_ = f.Close()
 		close(p.done)
 	}()
 	t.Cleanup(func() {
@@ -438,7 +438,7 @@ url = "nats://127.0.0.1:%d"
 		t.Fatal(err)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("scenario import: HTTP %d: %s", resp.StatusCode, body)
 	}
@@ -464,7 +464,7 @@ func httpGet(url string) string {
 	if err != nil {
 		return ""
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	b, _ := io.ReadAll(r.Body)
 	return string(b)
 }

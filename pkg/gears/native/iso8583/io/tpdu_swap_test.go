@@ -95,7 +95,7 @@ func TestServerReplySwapsTPDUAddresses(t *testing.T) {
 			}
 			sink := &tpduSink{}
 			srv := NewServer(&cfg, slog.New(slog.DiscardHandler), sink.emit, gen)
-			if err := srv.Start(context.Background()); err != nil {
+			if err = srv.Start(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = srv.Stop() })
@@ -161,7 +161,7 @@ func TestClientPreservesBinaryHeaderHexEncoded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	cfg := DefaultConfig()
 	cfg.Mode = ModeClient
 	cfg.Connect = l.Addr().String()
@@ -169,7 +169,7 @@ func TestClientPreservesBinaryHeaderHexEncoded(t *testing.T) {
 	cfg.TPDUEnabled = true
 	cfg.PreserveHeaders = true
 	cfg.ReconnectWait = Duration(100 * time.Millisecond)
-	if err := cfg.Validate(); err != nil {
+	if err = cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	gen, err := idgen.New(uuid.New())
@@ -178,7 +178,7 @@ func TestClientPreservesBinaryHeaderHexEncoded(t *testing.T) {
 	}
 	sink := &tpduSink{}
 	cl := NewClient(&cfg, slog.New(slog.DiscardHandler), sink.emit, gen)
-	if err := cl.Start(context.Background()); err != nil {
+	if err = cl.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cl.Stop() })
@@ -187,7 +187,7 @@ func TestClientPreservesBinaryHeaderHexEncoded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if _, err := conn.Write(frameWith(tpduHex("60F0F1F2F3"))); err != nil {
 		t.Fatal(err)
 	}
