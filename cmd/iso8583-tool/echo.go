@@ -10,8 +10,9 @@ import (
 	"net"
 	"os"
 
-	"github.com/jaab-tech/fluxrig/pkg/gears/native/iso8583/codec/sdl"
 	"time"
+
+	"github.com/jaab-tech/fluxrig/pkg/gears/native/iso8583/codec/sdl"
 )
 
 var (
