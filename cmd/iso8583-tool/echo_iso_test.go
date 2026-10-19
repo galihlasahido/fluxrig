@@ -37,7 +37,7 @@ func roundTrip(t *testing.T, framing int, little bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.writeFrame(cli, payload); err != nil {
+	if err = cfg.writeFrame(cli, payload); err != nil {
 		t.Fatal(err)
 	}
 	body, err := cfg.readFrame(cli)
