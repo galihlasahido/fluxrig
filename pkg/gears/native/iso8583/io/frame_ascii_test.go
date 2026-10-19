@@ -97,8 +97,8 @@ func TestASCIIFrame_RoundTrip(t *testing.T) {
 					t.Fatal(err)
 				}
 				a, b := net.Pipe()
-				defer a.Close()
-				defer b.Close()
+				defer func() { _ = a.Close() }()
+				defer func() { _ = b.Close() }()
 				go func() { _, _ = a.Write(f) }()
 				got, err := k.read(cfg, b)
 				if err != nil {
@@ -126,8 +126,8 @@ func TestASCIIFrame_ReadMalformed(t *testing.T) {
 			t.Run(k.name+"/"+name, func(t *testing.T) {
 				cfg := asciiCfg(4, name == "too small incl")
 				a, b := net.Pipe()
-				defer a.Close()
-				defer b.Close()
+				defer func() { _ = a.Close() }()
+				defer func() { _ = b.Close() }()
 				go func() { _, _ = a.Write([]byte(wire)) }()
 				if _, err := k.read(cfg, b); err == nil {
 					t.Fatal("expected error")
@@ -141,8 +141,8 @@ func TestASCIIFrame_ReadTooLong(t *testing.T) {
 	for _, k := range codecs() {
 		t.Run(k.name, func(t *testing.T) {
 			a, b := net.Pipe()
-			defer a.Close()
-			defer b.Close()
+			defer func() { _ = a.Close() }()
+			defer func() { _ = b.Close() }()
 			go func() { _, _ = a.Write([]byte("99999")) }()
 			if _, err := k.read(asciiCfg(5, false), b); err == nil {
 				t.Fatal("expected error for length above max")
@@ -156,7 +156,7 @@ func TestASCIIFrame_ReadTruncatedBody(t *testing.T) {
 		t.Run(k.name, func(t *testing.T) {
 			cfg := asciiCfg(4, false)
 			a, b := net.Pipe()
-			defer b.Close()
+			defer func() { _ = b.Close() }()
 			go func() { _, _ = a.Write([]byte("0010abc")); _ = a.Close() }()
 			if _, err := k.read(cfg, b); err == nil {
 				t.Fatal("expected error for truncated body")
