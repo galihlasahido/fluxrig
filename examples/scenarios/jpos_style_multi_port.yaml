@@ -31,7 +31,7 @@
 # Differences from jpos-server-multi-port:
 #   - Framing and spec match jPOS: the io gears use the 4-digit ASCII decimal
 #     length prefix of ASCIIChannel (frame_length_encoding: ascii_decimal) and
-#     the codecs use iso8583-v87-ascii-jpos.yaml, the ISO87APackager-compatible
+#     the codecs use iso8583-v87-ascii.yaml, the ISO87APackager-compatible
 #     spec. Both were verified against the real jPOS examples (test/e2e/jpos_interop).
 #   - The jPOS Selector routes on MTI + DE3 ("0800" + "180000"). This example
 #     answers every 0800.
@@ -60,7 +60,7 @@ gears:
   - name: "decode_8888"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "decode"
       on_error: "reject"
 
@@ -84,7 +84,7 @@ gears:
   - name: "encode_8888"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "encode"
       on_error: "reject"
 
@@ -103,7 +103,7 @@ gears:
   - name: "decode_8889"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "decode"
       on_error: "reject"
 
@@ -127,7 +127,7 @@ gears:
   - name: "encode_8889"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "encode"
       on_error: "reject"
 

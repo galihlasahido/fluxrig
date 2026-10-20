@@ -57,7 +57,7 @@ gears:
   - name: "decode"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "decode"
       on_error: "reject"
 
@@ -99,7 +99,7 @@ gears:
   - name: "encode"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "encode"
       on_error: "reject"
 

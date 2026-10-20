@@ -49,7 +49,7 @@
 # Differences from jpos-server-forwarding:
 #   - Framing and spec match jPOS: the io gears use the 4-digit ASCII decimal
 #     length prefix of ASCIIChannel (frame_length_encoding: ascii_decimal) and
-#     the codecs use iso8583-v87-ascii-jpos.yaml, the ISO87APackager-compatible
+#     the codecs use iso8583-v87-ascii.yaml, the ISO87APackager-compatible
 #     spec. Both were verified against the real jPOS examples (test/e2e/jpos_interop).
 #   - The jPOS decline reuses the original message and always uses DE39 = 68
 #     when there is no reply. Here the code depends on the reason (see
@@ -79,7 +79,7 @@ gears:
   - name: "decode_request"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "decode"
       on_error: "reject"
 
@@ -103,7 +103,7 @@ gears:
   - name: "encode_uplink"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "encode"
       on_error: "reject"
 
@@ -124,7 +124,7 @@ gears:
   - name: "decode_reply"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "decode"
       on_error: "reject"
 
@@ -134,7 +134,7 @@ gears:
   - name: "encode_response"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "encode"
       on_error: "reject"
 

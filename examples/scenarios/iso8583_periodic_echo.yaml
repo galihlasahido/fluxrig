@@ -19,7 +19,7 @@ meta:
 #   DE11 000001..999999  STAN, a counter that wraps back to 1 after 999999
 #
 # Not set: DE12 and DE63 (echo_s sends them, an echo does not need them) and DE70.
-# iso8583-v87-ascii-jpos.yaml does define DE70 (network management information code,
+# iso8583-v87-ascii.yaml does define DE70 (network management information code,
 # fixed 3 digits). If the remote host expects it, add it to the mapping below:
 #   root.iso8583.field."70" = "301"      # echo test
 # Without DE70 the echo is identified by MTI 0800 plus DE3 alone, as in echo_s.
@@ -34,13 +34,13 @@ meta:
 #                 redials the connection between echoes. Here: 10s interval, 30s
 #                 idle_timeout.
 #
-# The framing (4-digit ASCII decimal length) and the spec (iso8583-v87-ascii-jpos.yaml)
+# The framing (4-digit ASCII decimal length) and the spec (iso8583-v87-ascii.yaml)
 # are those of a jPOS ASCIIChannel + ISO87APackager peer, such as the jpos-server
 # example, which answers this echo with a 0810 and DE39 = 00 (verified by
 # test/e2e/jpos_interop). For a peer that uses another framing, change
 # frame_length_encoding / frame_length_size here.
 #
-# Run it from a directory that contains specs/iso8583-v87-ascii-jpos.yaml (copy it
+# Run it from a directory that contains specs/iso8583-v87-ascii.yaml (copy it
 # from examples/specs/), because the codec resolves spec_path from the Rack's
 # working directory. Point `connect` at a host that answers 0800 with 0810.
 
@@ -66,7 +66,7 @@ gears:
   - name: "encode-echo"
     type: "codec_iso8583"
     config:
-      spec_path: "specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "specs/iso8583-v87-ascii.yaml"
       direction: "encode"
       on_error: "reject"
 
@@ -84,7 +84,7 @@ gears:
   - name: "decode-reply"
     type: "codec_iso8583"
     config:
-      spec_path: "specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "specs/iso8583-v87-ascii.yaml"
       direction: "decode"
       on_error: "reject"
 

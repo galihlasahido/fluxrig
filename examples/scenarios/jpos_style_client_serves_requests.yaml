@@ -35,7 +35,7 @@
 # Differences from jpos-client-as-server:
 #   - Framing and spec match jPOS: the io gears use the 4-digit ASCII decimal
 #     length prefix of ASCIIChannel (frame_length_encoding: ascii_decimal) and
-#     the codecs use iso8583-v87-ascii-jpos.yaml, the ISO87APackager-compatible
+#     the codecs use iso8583-v87-ascii.yaml, the ISO87APackager-compatible
 #     spec. Both were verified against the real jPOS examples (test/e2e/jpos_interop).
 #   - The jPOS simulator sends two test echoes and shuts down. This scenario
 #     sends one echo every 30 seconds, which is closer to a real client.
@@ -86,7 +86,7 @@ gears:
   - name: "encode_request"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "encode"
       on_error: "reject"
 
@@ -94,7 +94,7 @@ gears:
   - name: "decode_inbound"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "decode"
       on_error: "reject"
 
@@ -121,7 +121,7 @@ gears:
   - name: "encode_reply"
     type: "codec_iso8583"
     config:
-      spec_path: "examples/specs/iso8583-v87-ascii-jpos.yaml"
+      spec_path: "examples/specs/iso8583-v87-ascii.yaml"
       direction: "encode"
       on_error: "reject"
 
