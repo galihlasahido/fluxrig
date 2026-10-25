@@ -276,9 +276,10 @@ openapi: pkg/mixer/api/docs/.generated ## Generate the OpenAPI specification
 # releases, and the release refuses to run against a dirty tree. The served
 # spec reports the real version instead: pkg/mixer/api/server.go assigns it to
 # docs.SwaggerInfo.Version from the same ldflag the rest of the binary uses.
-# Every API source file carries swag annotations, not only these three, so the
-# spec depends on all of them; a missing one leaves the spec stale without a word.
-pkg/mixer/api/docs/.generated: cmd/fluxrig-mixer/main.go $(filter-out %_test.go,$(wildcard pkg/mixer/api/*.go))
+# Every API source file carries swag annotations, and the spec also describes
+# the config structs, so it depends on both. A missing file leaves the spec
+# stale without a word.
+pkg/mixer/api/docs/.generated: cmd/fluxrig-mixer/main.go $(filter-out %_test.go,$(wildcard pkg/mixer/api/*.go)) $(filter-out %_test.go,$(wildcard pkg/config/*.go))
 	@echo "Generating OpenAPI spec..."
 	@mkdir -p pkg/mixer/api/docs
 	@if command -v swag >/dev/null; then \

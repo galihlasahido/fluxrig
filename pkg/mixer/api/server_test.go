@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/google/uuid"
@@ -527,6 +528,8 @@ func TestHandleEntityStats(t *testing.T) {
 type MockScenarioController struct {
 	ImportFunc   func(ctx context.Context, data []byte, dryRun bool) (string, error)
 	ActivateFunc func(ctx context.Context, name string) error
+	// PushActiveToRackSinceFunc, when set, replaces the push.
+	PushActiveToRackSinceFunc func(ctx context.Context, rack string, since time.Time) error
 }
 
 func (m *MockScenarioController) Import(ctx context.Context, data []byte, dryRun bool) (string, error) {
@@ -548,6 +551,12 @@ func (m *MockScenarioController) CurrentName() string {
 	return "test-scenario"
 }
 func (m *MockScenarioController) GetActiveScenario() *registry.Scenario {
+	return nil
+}
+func (m *MockScenarioController) PushActiveToRackSince(ctx context.Context, rack string, since time.Time) error {
+	if m.PushActiveToRackSinceFunc != nil {
+		return m.PushActiveToRackSinceFunc(ctx, rack, since)
+	}
 	return nil
 }
 

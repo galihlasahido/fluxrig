@@ -370,6 +370,13 @@ func (s *Server) handleRackAction(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
+			// The status before the approval says whether the Rack becomes
+			// active now. A Rack that is active already runs the scenario.
+			wasActive := false
+			if prev, errPrev := s.reg.Get(r.Context(), id); errPrev == nil {
+				wasActive = prev.Status == "active"
+			}
+			approvedAt := time.Now()
 			rack, err := s.reg.Approve(r.Context(), id, req.Name)
 			if err != nil {
 				if err == registry.ErrNotFound {
@@ -399,6 +406,9 @@ func (s *Server) handleRackAction(w http.ResponseWriter, r *http.Request) {
 
 			// NOTIFY RACK
 			s.publishStatus(id, "active", "approved", passportBytes)
+			if !wasActive {
+				s.pushActiveToApprovedRack(r.Context(), rack.Name, approvedAt)
+			}
 			_ = json.NewEncoder(w).Encode(rack)
 			return
 
@@ -820,6 +830,37 @@ func (s *Server) handleTopologyList(w http.ResponseWriter, r *http.Request) {
 		"gears": gearList,
 	}
 	_ = json.NewEncoder(w).Encode(topology)
+}
+
+// defaultApprovalPushTimeout is used when Config.API.ApprovalPushTimeout is
+// unset or does not parse.
+const defaultApprovalPushTimeout = 10 * time.Second
+
+// pushActiveToApprovedRack pushes the active scenario to a Rack that an
+// operator has just approved. A pending Rack is not a target of an
+// activation or of the push after its enrollment, so without this it runs no
+// global gear until something else pushes. The push skips a Rack that an
+// activation has reached since approvedAt.
+//
+// The push does not take the request's cancellation: a client that
+// disconnects must not stop it halfway. api.approval_push_timeout bounds it
+// instead. A failed push does not undo the approval. It is logged, and the
+// operator activates the scenario again to reach the Rack.
+func (s *Server) pushActiveToApprovedRack(ctx context.Context, rackName string, approvedAt time.Time) {
+	if s.scenarioCtrl == nil {
+		return
+	}
+	timeout := defaultApprovalPushTimeout
+	if s.cfg != nil {
+		if d, err := time.ParseDuration(s.cfg.API.ApprovalPushTimeout); err == nil && d > 0 {
+			timeout = d
+		}
+	}
+	pushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+	if err := s.scenarioCtrl.PushActiveToRackSince(pushCtx, rackName, approvedAt); err != nil {
+		slog.Warn("failed to push the active scenario to the approved rack", "rack", rackName, "error", err)
+	}
 }
 
 func (s *Server) publishStatus(id uuid.UUID, status string, cmd string, passport []byte) {

@@ -146,6 +146,10 @@ type ApiConfig struct {
 	// listening, rather than the success a bare, unconfirmed publish would
 	// have reported.
 	ControlConfirmTimeout string `koanf:"control_confirm_timeout" example:"2s"`
+	// ApprovalPushTimeout bounds the push of the active scenario to a Rack
+	// that an operator approves. The push does not end when the request
+	// does: a client that disconnects must not leave the Rack half served.
+	ApprovalPushTimeout string `koanf:"approval_push_timeout" example:"10s"`
 	// AuthToken gates every management-API route except health. A request
 	// must send it as "Authorization: Bearer <token>". Never serialized.
 	AuthToken string `koanf:"auth_token" json:"-" cbor:"-" example:""`
@@ -183,6 +187,7 @@ func LoadMixer(path string) (*MixerConfig, error) {
 	_ = k.Set("api.port", 8090)
 	_ = k.Set("api.read_header_timeout", "3s")
 	_ = k.Set("api.control_confirm_timeout", "2s")
+	_ = k.Set("api.approval_push_timeout", "10s")
 	_ = k.Set("api.auth_token", "")
 	_ = k.Set("api.auth_disabled_dangerously", false)
 
@@ -209,6 +214,7 @@ func LoadMixer(path string) (*MixerConfig, error) {
 	_ = k.Set("snake.dlq_enabled", true)
 	_ = k.Set("snake.dlq_subject", "flux.dlq")
 	_ = k.Set("snake.dlq_max_age", "720h")
+	_ = k.Set("snake.dlq_publish_timeout", "5s")
 
 	// Defaults: Telemetry (Self-Monitoring)
 	_ = k.Set("telemetry.service_name", "flux.mixer")

@@ -60,6 +60,9 @@ type ScenarioManager interface {
 	CurrentVersion() string
 	CurrentName() string
 	GetActiveScenario() *registry.Scenario
+	// PushActiveToRackSince pushes the active scenario to one Rack. The API
+	// calls it when an operator approves a pending Rack.
+	PushActiveToRackSince(ctx context.Context, rackName string, since time.Time) error
 }
 
 // TopologyStore keeps the rows derived from the active scenario (the
@@ -279,11 +282,11 @@ func (c *ScenarioController) PushActiveToRack(ctx context.Context, rackName stri
 	return c.PushActiveToRackSince(ctx, rackName, time.Time{})
 }
 
-// PushActiveToRackSince pushes the active scenario to a Rack that enrolled at
-// since, unless the Rack has already received this activation after since:
-// an activation that ran between the enrollment and this push reached it
-// already, and a second push would restart its gears for nothing. A zero
-// since always pushes.
+// PushActiveToRackSince pushes the active scenario to a Rack that enrolled or
+// was approved at since, unless the Rack has already received this
+// activation after since: an activation that ran between that moment and
+// this push reached it already, and a second push would restart its gears
+// for nothing. A zero since always pushes.
 func (c *ScenarioController) PushActiveToRackSince(ctx context.Context, rackName string, since time.Time) error {
 	c.mu.Lock()
 	active, content := c.active, c.activeYAML
@@ -712,8 +715,8 @@ func (c *ScenarioController) pushScenarioToRacks(ctx context.Context, s *registr
 			}
 		}
 		// A Global Gear (no deploy) runs on every Rack. A Rack that enrolls
-		// later receives the scenario through PushActiveToRackSince; the
-		// Racks already enrolled receive it here.
+		// or is approved later receives the scenario through
+		// PushActiveToRackSince. The Racks already active receive it here.
 		if hasGlobalGear(s) && c.racks != nil {
 			active, err := c.racks.List(ctx, "active")
 			if err != nil {

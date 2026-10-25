@@ -53,3 +53,41 @@ jobs:
           fi
           echo "::error::This pull request does not reference an issue. Open an issue first, then put 'Closes #<number>' in the description."
           exit 1
+
+  protected-paths:
+    name: protected paths
+    runs-on: ubuntu-latest
+    # The workflows and the repository configuration under .github/ are kept by
+    # the maintainers. A workflow file merged from a pull request runs later, in
+    # CI with more trust than the pull request had, so a community pull request
+    # may not change one. .claude/ is not published by a release, so a change
+    # there would be dropped without a word. Ask for either change in an issue.
+    #
+    # The file list comes from the API. The contributor's code is never checked
+    # out, as in the job above.
+    if: >
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'renovate[bot]'
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check the changed paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # A rename is listed under its new name, with the old one in
+          # previous_filename: moving a workflow out of .github/ changes it too.
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)')
+          protected=$(printf '%s\n' "$files" | grep -E '^\.(github|claude)/' | sort -u || true)
+          if [ -n "$protected" ]; then
+            printf '%s\n' "$protected" | sed 's/^/  /'
+            echo "::error::This pull request changes files under .github/ or .claude/, which community pull requests may not change. Remove those changes, and open an issue if one is needed."
+            exit 1
+          fi
+          echo "No protected path is changed."

@@ -28,6 +28,7 @@ fluxrig follows a strict **PR-First** workflow to maintain history integrity:
 2.  **History Hardening**: On **2026-04-29**, the project underwent a significant history synchronization event to ensure a unified, complete lineage.
     - If your fork was created before this date, you MUST **re-clone** or **reset** your local `main` and `dev` branches to the current upstream state.
 3.  **DCO Sign-off**: Every commit must be signed off (`git commit -s`) to certify compliance with the Developer Certificate of Origin.
+4.  **No changes under `.github/` or `.claude/`**: The workflows and the repository configuration are kept by the maintainers, and a check fails a community pull request that changes them. If a workflow needs a change, describe it in an issue.
 
 ### Quick Summary
 

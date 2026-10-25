@@ -31,10 +31,24 @@ func runDecodeMode() {
 		log.Fatalf("Failed to read spec file: %v", err)
 	}
 
+	result, err := decodeHex(content, *decodeMessage)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	// Output as JSON
+	jsonOut, _ := json.Marshal(result)
+	fmt.Println(string(jsonOut))
+}
+
+// decodeHex decodes a hex-encoded message with the spec in content and
+// returns the MTI and every present field by key. A fixed-length field comes
+// back at the width the wire carried, as the codec gear reports it.
+func decodeHex(content []byte, msgHex string) (_ map[string]string, err error) {
 	// Load moov spec
 	moovSpec, _, err := sdl.LoadSpecContent(content, "")
 	if err != nil {
-		log.Fatalf("Failed to load moov spec: %v", err)
+		return nil, fmt.Errorf("failed to load moov spec: %w", err)
 	}
 
 	// Patch spec with ASCII encoding (like fluxrig decoder does).
@@ -69,9 +83,9 @@ func runDecodeMode() {
 	}
 
 	// Decode hex message
-	msgBytes, err := hex.DecodeString(*decodeMessage)
+	msgBytes, err := hex.DecodeString(msgHex)
 	if err != nil {
-		log.Fatalf("Failed to decode hex message: %v", err)
+		return nil, fmt.Errorf("failed to decode hex message: %w", err)
 	}
 
 	// Remove length prefix if present (2 bytes)
@@ -85,7 +99,7 @@ func runDecodeMode() {
 	// Decode using moov-io/iso8583
 	isoMsg := iso8583.NewMessage(moovSpec)
 	if isoMsg == nil {
-		log.Fatalf("Failed to create isoMsg from moovSpec")
+		return nil, fmt.Errorf("failed to create isoMsg from moovSpec")
 	}
 
 	// The codec gear recovers a panic inside Unpack (a malformed or adversarial
@@ -95,19 +109,23 @@ func runDecodeMode() {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Fatalf("panic while unpacking message: %v", r)
+				err = fmt.Errorf("panic while unpacking message: %v", r)
 			}
 		}()
-		if err := isoMsg.Unpack(msgBytes); err != nil {
-			log.Fatalf("Failed to unpack message: %v", err)
+		if unpackErr := isoMsg.Unpack(msgBytes); unpackErr != nil {
+			err = fmt.Errorf("failed to unpack message: %w", unpackErr)
 		}
 	}()
+	if err != nil {
+		return nil, err
+	}
 
 	// Extract fields
 	result := make(map[string]string)
 
 	// Get MTI
 	mti, _ := isoMsg.GetString(0)
+	mti = sdl.FixedWidth(isoMsg.GetField(0), mti)
 	if len(mti) > 0 {
 		for len(mti) < 4 {
 			mti = "0" + mti
@@ -122,15 +140,13 @@ func runDecodeMode() {
 			if i > 0 && !bitmap.IsSet(i) {
 				continue
 			}
-			val, err := isoMsg.GetString(i)
-			if err != nil {
+			val, getErr := isoMsg.GetString(i)
+			if getErr != nil {
 				continue
 			}
-			result[fmt.Sprintf("iso8583.field.%d", i)] = val
+			result[fmt.Sprintf("iso8583.field.%d", i)] = sdl.FixedWidth(isoMsg.GetField(i), val)
 		}
 	}
 
-	// Output as JSON
-	jsonOut, _ := json.Marshal(result)
-	fmt.Println(string(jsonOut))
+	return result, nil
 }

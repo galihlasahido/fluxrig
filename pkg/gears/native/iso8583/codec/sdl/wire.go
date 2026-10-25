@@ -337,13 +337,9 @@ func baseWireFields(source, baseDir string) (map[string]map[string]any, string, 
 		}
 		raw = b
 	} else {
-		path, err := specRelative(source, baseDir)
+		b, err := readSpecRelative(source, baseDir)
 		if err != nil {
 			return nil, "", err
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return nil, "", fmt.Errorf("read wire source %q: %w", source, err)
 		}
 		raw = b
 	}
@@ -390,10 +386,12 @@ func isHexString(s string) bool {
 	return len(s) > 0
 }
 
-// specRelative resolves a file wire source against the spec's own directory. A
-// spec is deployed to Racks by the Mixer, so the path it names is untrusted
-// input: an absolute path or one climbing out of the spec's directory would let
-// a deployed scenario read files the operator never meant to expose.
+// specRelative checks a file wire source against the spec's own directory and
+// returns the cleaned name relative to it. A spec is deployed to Racks by the
+// Mixer, so the path it names is untrusted input: an absolute path or one
+// climbing out of the spec's directory would let a deployed scenario read files
+// the operator never meant to expose. This check gives the clear refusals.
+// readSpecRelative enforces the same bound through the OS.
 func specRelative(rel, baseDir string) (string, error) {
 	if baseDir == "" {
 		return "", fmt.Errorf(
@@ -403,12 +401,32 @@ func specRelative(rel, baseDir string) (string, error) {
 	if filepath.IsAbs(rel) {
 		return "", fmt.Errorf("wire source %q must be relative to the spec", rel)
 	}
-	root := filepath.Clean(baseDir)
-	full := filepath.Clean(filepath.Join(root, rel))
-	if full != root && !strings.HasPrefix(full, root+string(filepath.Separator)) {
+	name := filepath.Clean(rel)
+	if !filepath.IsLocal(name) {
 		return "", fmt.Errorf("wire source %q resolves outside the spec's directory", rel)
 	}
-	return full, nil
+	return name, nil
+}
+
+// readSpecRelative reads a file wire source through an os.Root opened on the
+// spec's directory. The root refuses any name that leaves the directory, and
+// that includes a symlink inside it that points outside. A prefix check on the
+// path cannot see where a symlink leads.
+func readSpecRelative(source, baseDir string) ([]byte, error) {
+	name, err := specRelative(source, baseDir)
+	if err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("open the spec's directory for wire source %q: %w", source, err)
+	}
+	defer func() { _ = root.Close() }()
+	b, err := root.ReadFile(name)
+	if err != nil {
+		return nil, fmt.Errorf("read wire source %q: %w", source, err)
+	}
+	return b, nil
 }
 
 // load compiles a v2 document: the wire half through Moov, the semantic half
