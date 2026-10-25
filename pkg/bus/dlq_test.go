@@ -151,18 +151,27 @@ func TestNatsBus_DLQDisabledKeepsOldBehavior(t *testing.T) {
 	nb, js := newDLQTestStream(t)
 	nb.dlqEnabled = false
 
+	handled := make(chan struct{}, 1)
 	sub, err := nb.Subscribe("flux.msg.nodlq.test", func(ctx context.Context, m *fluxmsg.FluxMsg) error {
+		handled <- struct{}{}
 		return nil
 	})
 	require.NoError(t, err)
 	defer func() { _ = sub.Unsubscribe() }()
 
+	// The undecodable message, then a valid one on the same subject. Delivery
+	// is in order, so once the valid one reaches the handler, the first has
+	// been settled, and a routed copy would already be in the DLQ.
 	require.NoError(t, nb.PublishRaw(context.Background(), "flux.msg.nodlq.test", []byte{0xff, 0xff}, uuid.New()))
+	require.NoError(t, nb.Publish(context.Background(), "flux.msg.nodlq.test", fluxmsg.New()))
+	select {
+	case <-handled:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the valid message after the undecodable one was not delivered")
+	}
 
-	// Give a routed message ample time to appear; it must not.
 	stream, err := js.Stream(context.Background(), "flux-dlq")
 	require.NoError(t, err)
-	time.Sleep(2 * time.Second)
 	info, err := stream.Info(context.Background())
 	require.NoError(t, err)
 	assert.Zero(t, info.State.Msgs, "a disabled DLQ must keep nothing")
@@ -173,4 +182,67 @@ func TestDeadLetterSubject(t *testing.T) {
 	assert.Equal(t, "flux.dlq.flux.msg.rack-1.gear.out", deadLetterSubject("flux.dlq", "flux.msg.rack-1.gear.out"))
 	assert.Equal(t, "flux.dlq.x", deadLetterSubject("flux.dlq.", "x"), "a trailing dot must not double")
 	assert.Equal(t, "flux.dlq.x", deadLetterSubject("", "x"), "an empty prefix uses the default")
+}
+
+// stalledJetStream is a server that takes a dead letter and never answers.
+// Only PublishMsg is implemented: it holds until the caller's context ends.
+type stalledJetStream struct {
+	jetstream.JetStream
+}
+
+func (stalledJetStream) PublishMsg(ctx context.Context, _ *nats.Msg, _ ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// A dead letter publish used to run on context.Background(), so a server
+// that never answered held the consumer for as long as the client library
+// chose. It must give up after the configured timeout.
+func TestDeadLetter_StalledServerReturnsWithinTimeout(t *testing.T) {
+	nb := &NatsBus{
+		js:                stalledJetStream{},
+		dlqEnabled:        true,
+		dlqSubject:        "flux.dlq",
+		dlqPublishTimeout: 50 * time.Millisecond,
+	}
+
+	done := make(chan bool, 1)
+	go func() {
+		done <- nb.deadLetter(context.Background(), "flux.msg.stalled", []byte{0xff}, DLQReasonDecode, 1)
+	}()
+
+	select {
+	case routed := <-done:
+		assert.False(t, routed, "a dead letter the server never took is not routed")
+	case <-time.After(10 * time.Second):
+		t.Fatal("the dead letter publish did not return within its configured timeout")
+	}
+}
+
+// The timeout bounds the publish, and so does the caller's context: a parent
+// that ends first stops the publish without waiting for the timeout.
+func TestRouteToDLQ_BoundedByTimeoutAndParent(t *testing.T) {
+	run := func(ctx context.Context, timeout time.Duration) <-chan error {
+		out := make(chan error, 1)
+		go func() {
+			out <- routeToDLQ(ctx, stalledJetStream{}, "flux.dlq", "flux.msg.x", []byte{0xff}, DLQReasonDecode, 1, timeout)
+		}()
+		return out
+	}
+	wait := func(ch <-chan error) error {
+		select {
+		case err := <-ch:
+			return err
+		case <-time.After(10 * time.Second):
+			t.Fatal("routeToDLQ did not return")
+			return nil
+		}
+	}
+
+	require.ErrorIs(t, wait(run(context.Background(), 50*time.Millisecond)), context.DeadlineExceeded)
+
+	parent, cancel := context.WithCancel(context.Background())
+	ch := run(parent, time.Hour)
+	cancel()
+	require.ErrorIs(t, wait(ch), context.Canceled)
 }

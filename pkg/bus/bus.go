@@ -47,6 +47,9 @@ type ConnectOptions struct {
 	// previous behavior: log and discard.
 	DLQEnabled bool
 	DLQSubject string
+	// DLQPublishTimeout bounds one dead letter publish. Zero or less selects
+	// the default (5s).
+	DLQPublishTimeout time.Duration
 }
 
 // Bus defines the standard behavior for our messaging layer.

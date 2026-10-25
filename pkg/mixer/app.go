@@ -280,6 +280,17 @@ func (a *App) Run(ctx context.Context) error {
 		inactiveThreshold = 30 * time.Second
 	}
 
+	// Empty, zero or negative leaves the bus default in place. A value that
+	// is not a duration stops the start rather than reading as zero.
+	var dlqPublishTimeout time.Duration
+	if v := a.cfg.Snake.DLQPublishTimeout; v != "" {
+		parsed, errDLQTimeout := time.ParseDuration(v)
+		if errDLQTimeout != nil {
+			return fmt.Errorf("invalid snake.dlq_publish_timeout %q: %w", v, errDLQTimeout)
+		}
+		dlqPublishTimeout = parsed
+	}
+
 	if errConn := natsBus.Connect(jsURL, bus.ConnectOptions{
 		Name:               a.cfg.Base.Name,
 		Domain:             a.cfg.Snake.Domain,
@@ -291,6 +302,7 @@ func (a *App) Run(ctx context.Context) error {
 		InProcessServer:    snakeSrv, // Optimized internal link
 		DLQEnabled:         a.cfg.Snake.DLQEnabled,
 		DLQSubject:         a.cfg.Snake.DLQSubject,
+		DLQPublishTimeout:  dlqPublishTimeout,
 	}); errConn != nil {
 		return fmt.Errorf("failed to connect to bus: %w", errConn)
 	}

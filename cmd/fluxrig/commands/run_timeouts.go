@@ -32,6 +32,7 @@ type rackTimeouts struct {
 	enrollInterval     time.Duration
 	heartbeat          time.Duration
 	inactiveThreshold  time.Duration
+	dlqPublish         time.Duration
 }
 
 // The documented defaults from pkg/config's LoadRack, repeated here so a
@@ -53,6 +54,7 @@ const (
 	defaultEnrollInterval     = 2 * time.Second
 	defaultHeartbeatInterval  = 30 * time.Second
 	defaultInactiveThreshold  = 30 * time.Second
+	defaultDLQPublishTimeout  = 5 * time.Second
 )
 
 // parseRackTimeouts reads them, and names the setting that is not a duration.
@@ -137,6 +139,9 @@ func parseRackTimeouts(cfg *config.RackConfig) (rackTimeouts, error) {
 	// Same clamp runSession already applied by hand for exactly this one
 	// setting (== 0 only); centralized here and extended to negative values.
 	if out.inactiveThreshold, err = parseTimeout("snake.inactive_threshold", cfg.Snake.InactiveThreshold, defaultInactiveThreshold); err != nil {
+		return out, err
+	}
+	if out.dlqPublish, err = parseTimeout("snake.dlq_publish_timeout", cfg.Snake.DLQPublishTimeout, defaultDLQPublishTimeout); err != nil {
 		return out, err
 	}
 

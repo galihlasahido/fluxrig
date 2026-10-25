@@ -36,6 +36,7 @@ type NatsBus struct {
 	inactiveThreshold time.Duration
 	dlqEnabled        bool
 	dlqSubject        string
+	dlqPublishTimeout time.Duration
 }
 
 // NewNatsBus creates a new instance.
@@ -197,6 +198,10 @@ func (n *NatsBus) finalizeConnect(opts ConnectOptions) error {
 	if n.dlqSubject == "" {
 		n.dlqSubject = dlqDefaultSubject
 	}
+	n.dlqPublishTimeout = opts.DLQPublishTimeout
+	if n.dlqPublishTimeout <= 0 {
+		n.dlqPublishTimeout = defaultDLQPublishTimeout
+	}
 
 	// 3. Initialize JetStream
 	js, err := jetstream.New(n.conn)
@@ -211,12 +216,19 @@ func (n *NatsBus) finalizeConnect(opts ConnectOptions) error {
 // deadLetter routes data to the DLQ when enabled and returns true if the
 // message was handed off. It logs a DLQ failure itself: the caller settles the
 // original message either way, but a dead letter that could not be written
-// must not pass unnoticed.
+// must not pass unnoticed. The publish is bounded by dlqPublishTimeout and by
+// ctx, whichever ends first. A consumer callback has no parent context before
+// it decodes the message, so its decode and validate paths pass
+// context.Background() and rely on the timeout.
 func (n *NatsBus) deadLetter(ctx context.Context, originSubject string, data []byte, reason string, deliveries uint64) bool {
 	if !n.dlqEnabled {
 		return false
 	}
-	if err := routeToDLQ(ctx, n.js, n.dlqSubject, originSubject, data, reason, deliveries); err != nil {
+	timeout := n.dlqPublishTimeout
+	if timeout <= 0 {
+		timeout = defaultDLQPublishTimeout
+	}
+	if err := routeToDLQ(ctx, n.js, n.dlqSubject, originSubject, data, reason, deliveries, timeout); err != nil {
 		slog.Error("NATS Bus: failed to route message to the dead letter queue",
 			"origin_subject", originSubject,
 			"reason", reason,
@@ -418,7 +430,7 @@ func (n *NatsBus) Subscribe(subject string, handler Handler) (Subscription, erro
 					"deliveries", deliveries,
 					"error", errHandle,
 				)
-				n.deadLetter(context.Background(), subject, msg.Data(), DLQReasonRedeliveryExhausted, deliveries)
+				n.deadLetter(ctx, subject, msg.Data(), DLQReasonRedeliveryExhausted, deliveries)
 				_ = msg.Term()
 				return
 			}
@@ -563,7 +575,7 @@ func (n *NatsBus) SubscribeDurable(subject, durableName string, handler Handler)
 					"deliveries", deliveries,
 					"error", errHandle,
 				)
-				n.deadLetter(context.Background(), subject, msg.Data(), DLQReasonRedeliveryExhausted, deliveries)
+				n.deadLetter(ctx, subject, msg.Data(), DLQReasonRedeliveryExhausted, deliveries)
 				_ = msg.Term()
 				return
 			}

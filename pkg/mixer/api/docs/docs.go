@@ -1069,6 +1069,11 @@ const docTemplate = `{
         "config.ApiConfig": {
             "type": "object",
             "properties": {
+                "approvalPushTimeout": {
+                    "description": "ApprovalPushTimeout bounds the push of the active scenario to a Rack\nthat an operator approves. The push does not end when the request\ndoes: a client that disconnects must not leave the Rack half served.",
+                    "type": "string",
+                    "example": "10s"
+                },
                 "authDisabledDangerously": {
                     "description": "AuthDisabledDangerously must be set explicitly to start the Mixer with\nno AuthToken configured. Without either, Start refuses to run: silently\nserving the management API unauthenticated is the exact failure mode\nthis field exists to require an explicit, named opt-out from.",
                     "type": "boolean",
@@ -1497,6 +1502,11 @@ const docTemplate = `{
                     "description": "DLQMaxAge bounds how long a dead letter is kept. Empty keeps the\nstream default (24h).",
                     "type": "string",
                     "example": "720h"
+                },
+                "dlqpublishTimeout": {
+                    "description": "DLQPublishTimeout bounds how long one dead letter publish waits for the\nserver. A dead letter that cannot be written in time is logged and the\nconsumer moves on, so a stalled server does not hold it.",
+                    "type": "string",
+                    "example": "5s"
                 },
                 "dlqsubject": {
                     "description": "DLQSubject is the subject prefix the dead letter stream captures.",

@@ -98,6 +98,10 @@ type SnakeConfig struct {
 	// DLQMaxAge bounds how long a dead letter is kept. Empty keeps the
 	// stream default (24h).
 	DLQMaxAge string `koanf:"dlq_max_age" example:"720h"`
+	// DLQPublishTimeout bounds how long one dead letter publish waits for the
+	// server. A dead letter that cannot be written in time is logged and the
+	// consumer moves on, so a stalled server does not hold it.
+	DLQPublishTimeout string `koanf:"dlq_publish_timeout" example:"5s"`
 }
 
 // TelemetryConfig configures self-reporting metrics and logs.

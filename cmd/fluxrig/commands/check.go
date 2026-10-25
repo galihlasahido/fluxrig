@@ -20,40 +20,44 @@ import (
 
 var configPathCheck string
 
+// checkTimeout bounds each network check. A pre-flight check gives one answer
+// quickly, so it makes a single attempt instead of the bus's reconnect loop.
+var checkTimeout time.Duration
+
+// defaultCheckTimeout is the --timeout default.
+const defaultCheckTimeout = 5 * time.Second
+
 var checkCmd = &cobra.Command{
 	Use:   "check",
 	Short: "Perform a pre-flight diagnostic check of the environment",
 	Long: `Verifies connectivity to the NATS bus, Mixer API, and local storage integrity.
 Essential for troubleshooting connectivity and permission issues before production launch.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if configPathCheck != "" {
-			// Try loading as Rack config
-			if cfg, err := config.LoadRack(configPathCheck); err == nil {
-				if cfg.Snake.URL != "" {
-					_ = os.Setenv("FLUXRIG_BUS_URL", cfg.Snake.URL)
-				}
-				if cfg.Store.Dir != "" {
-					_ = os.Setenv("FLUXRIG_STORE_DIR", cfg.Store.Dir)
-				}
-			}
-			// Also try loading as Mixer config to get API port if available
-			if cfg, err := config.LoadMixer(configPathCheck); err == nil {
-				_ = os.Setenv("FLUXRIG_API_URL", fmt.Sprintf("http://localhost:%d", cfg.API.Port))
-			}
-		}
-
 		fmt.Println(color.CyanString("fluxrig Pre-flight Check"))
 		fmt.Println(color.CyanString("========================="))
+
+		if configPathCheck != "" {
+			fmt.Printf("%-25s ", "Configuration")
+			if err := applyCheckConfig(configPathCheck); err != nil {
+				fmt.Printf("[%s] %v\n", color.RedString("FAIL"), err)
+				fmt.Println()
+				fmt.Println(color.RedString("✗ The configuration does not load. A Rack or Mixer would refuse to start with it."))
+				os.Exit(1)
+			}
+			fmt.Printf("[%s] (%s)\n", color.GreenString("OK"), configPathCheck)
+		}
+
+		checkTimeout = effectiveCheckTimeout(checkTimeout)
 
 		allOk := true
 
 		// 1. NATS Check
-		if !checkNATS() {
+		if !checkNATS(checkTimeout) {
 			allOk = false
 		}
 
 		// 2. Mixer API Check
-		if !checkAPI() {
+		if !checkAPI(checkTimeout) {
 			allOk = false
 		}
 
@@ -79,7 +83,43 @@ Essential for troubleshooting connectivity and permission issues before producti
 	},
 }
 
-func checkNATS() bool {
+// applyCheckConfig loads the file named by -c as a Rack config and as a Mixer
+// config, and exports what the later checks read from each. A file is one kind
+// or the other, and each loader refuses the keys of the other kind. So the file
+// is valid when at least one loader accepts it. When both refuse it, the error
+// carries both reasons, because check cannot know which kind was meant.
+func applyCheckConfig(path string) error {
+	rackCfg, rackErr := config.LoadRack(path)
+	if rackErr == nil {
+		if rackCfg.Snake.URL != "" {
+			_ = os.Setenv("FLUXRIG_BUS_URL", rackCfg.Snake.URL)
+		}
+		if rackCfg.Store.Dir != "" {
+			_ = os.Setenv("FLUXRIG_STORE_DIR", rackCfg.Store.Dir)
+		}
+	}
+	mixerCfg, mixerErr := config.LoadMixer(path)
+	if mixerErr == nil {
+		_ = os.Setenv("FLUXRIG_API_URL", fmt.Sprintf("http://localhost:%d", mixerCfg.API.Port))
+	}
+	if rackErr != nil && mixerErr != nil {
+		return fmt.Errorf("%s does not load as a Rack or a Mixer config. As a Rack config: %w. As a Mixer config: %w",
+			path, rackErr, mixerErr)
+	}
+	return nil
+}
+
+// effectiveCheckTimeout returns the default for a zero or negative
+// --timeout, which would leave the network checks unbounded, the hang the
+// flag exists to prevent.
+func effectiveCheckTimeout(d time.Duration) time.Duration {
+	if d <= 0 {
+		return defaultCheckTimeout
+	}
+	return d
+}
+
+func checkNATS(timeout time.Duration) bool {
 	fmt.Printf("%-25s ", "NATS Connectivity")
 	url := os.Getenv("FLUXRIG_BUS_URL")
 	if url == "" {
@@ -88,8 +128,10 @@ func checkNATS() bool {
 
 	b := bus.NewNatsBus("flux-check")
 	err := b.Connect(url, bus.ConnectOptions{
-		Name:           "flux-check",
-		ConnectTimeout: 2 * time.Second,
+		Name:                 "flux-check",
+		ConnectTimeout:       timeout,
+		InitialRetryAttempts: 1,
+		InitialRetryTimeout:  timeout,
 	})
 
 	if err != nil {
@@ -102,7 +144,7 @@ func checkNATS() bool {
 	return true
 }
 
-func checkAPI() bool {
+func checkAPI(timeout time.Duration) bool {
 	fmt.Printf("%-25s ", "Mixer API (8090)")
 	url := os.Getenv("FLUXRIG_API_URL")
 	if url == "" {
@@ -115,7 +157,7 @@ func checkAPI() bool {
 		return false
 	}
 
-	client := &http.Client{Timeout: 2 * time.Second}
+	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Printf("[%s] (%s) %v\n", color.RedString("FAIL"), url, err)
@@ -240,5 +282,6 @@ func checkPKI(configPath string, overrideStoreDir string) bool {
 
 func init() {
 	checkCmd.Flags().StringVarP(&configPathCheck, "config", "c", "", "Path to configuration file")
+	checkCmd.Flags().DurationVar(&checkTimeout, "timeout", defaultCheckTimeout, "How long each network check (NATS, Mixer API) may take")
 	rootCmd.AddCommand(checkCmd)
 }

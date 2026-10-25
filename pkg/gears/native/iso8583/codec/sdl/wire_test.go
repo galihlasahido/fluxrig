@@ -161,3 +161,94 @@ spec:
 		t.Errorf("error should name the key and where it belongs: %v", err)
 	}
 }
+
+// A file wire source is read from the spec's own directory and nowhere else. The
+// symlink cases are the reason the read goes through os.Root: the path names a
+// file inside the directory, and only the OS can see that it leads outside.
+func TestFileWireSourceStaysInsideSpecDirectory(t *testing.T) {
+	const wireDoc = "name: base\nfields:\n  \"0\":\n    type: String\n    length: 4\n"
+
+	top := t.TempDir()
+	specDir := filepath.Join(top, "spec")
+	outside := filepath.Join(top, "outside")
+	for _, d := range []string{filepath.Join(specDir, "wire"), outside} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inside := filepath.Join(specDir, "wire", "base.yaml")
+	secret := filepath.Join(outside, "secret.yaml")
+	for _, f := range []string{inside, secret} {
+		if err := os.WriteFile(f, []byte(wireDoc), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("relative source inside the directory loads", func(t *testing.T) {
+		fields, name, err := baseWireFields("wire/base.yaml", specDir)
+		if err != nil {
+			t.Fatalf("a source inside the spec's directory was refused: %v", err)
+		}
+		if name != "base" || len(fields) != 1 {
+			t.Errorf("got name %q and %d fields, want base and 1", name, len(fields))
+		}
+	})
+
+	refused := []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{"parent directory", "../outside/secret.yaml", "resolves outside the spec's directory"},
+		{"parent after a subdirectory", "wire/../../outside/secret.yaml", "resolves outside the spec's directory"},
+		{"absolute path", secret, "must be relative to the spec"},
+	}
+	for _, tc := range refused {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := baseWireFields(tc.source, specDir)
+			if err == nil {
+				t.Fatalf("source %q was read", tc.source)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error should say %q: %v", tc.want, err)
+			}
+		})
+	}
+
+	t.Run("no spec directory", func(t *testing.T) {
+		_, _, err := baseWireFields("wire/base.yaml", "")
+		if err == nil || !strings.Contains(err.Error(), "resolved from the store rather than from disk") {
+			t.Errorf("a path source without a spec directory was not refused clearly: %v", err)
+		}
+	})
+
+	t.Run("symlink that stays inside loads", func(t *testing.T) {
+		link := filepath.Join(specDir, "inner.yaml")
+		if err := os.Symlink(filepath.Join("wire", "base.yaml"), link); err != nil {
+			t.Skipf("symlinks are not available here: %v", err)
+		}
+		if _, _, err := baseWireFields("inner.yaml", specDir); err != nil {
+			t.Fatalf("a symlink to a file inside the spec's directory was refused: %v", err)
+		}
+	})
+
+	t.Run("symlinked file pointing outside", func(t *testing.T) {
+		link := filepath.Join(specDir, "link.yaml")
+		if err := os.Symlink(secret, link); err != nil {
+			t.Skipf("symlinks are not available here: %v", err)
+		}
+		if _, _, err := baseWireFields("link.yaml", specDir); err == nil {
+			t.Fatal("a symlink inside the spec's directory was followed to a file outside it")
+		}
+	})
+
+	t.Run("symlinked directory pointing outside", func(t *testing.T) {
+		link := filepath.Join(specDir, "linkdir")
+		if err := os.Symlink(outside, link); err != nil {
+			t.Skipf("symlinks are not available here: %v", err)
+		}
+		if _, _, err := baseWireFields("linkdir/secret.yaml", specDir); err == nil {
+			t.Fatal("a symlinked directory inside the spec's directory was followed outside it")
+		}
+	})
+}

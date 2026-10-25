@@ -35,7 +35,13 @@ const (
 // dlqDefaultSubject is the prefix used when no DLQ subject is configured.
 const dlqDefaultSubject = "flux.dlq"
 
-// deadLetterSubject builds the subject a failed message is republished to.// The origin subject is appended so an operator can filter the DLQ by where
+// defaultDLQPublishTimeout bounds one dead letter publish when ConnectOptions
+// leaves DLQPublishTimeout unset. Rack and Mixer configuration set it
+// explicitly (snake.dlq_publish_timeout).
+const defaultDLQPublishTimeout = 5 * time.Second
+
+// deadLetterSubject builds the subject a failed message is republished to.
+// The origin subject is appended so an operator can filter the DLQ by where
 // the message was headed, and replaying a subject's failures is one read:
 // flux.dlq.<origin>.
 func deadLetterSubject(prefix, originSubject string) string {
@@ -62,11 +68,18 @@ func deliveryCount(msg jetstream.Msg) uint64 {
 // message that cannot be decoded will not decode on redelivery either, so the
 // caller settles the original regardless, but it must log a DLQ failure rather
 // than let it pass silently.
-func routeToDLQ(ctx context.Context, js jetstream.JetStream, prefix, originSubject string, data []byte, reason string, deliveries uint64) error {
+//
+// The publish waits at most timeout for the server to answer, and less when
+// ctx ends first. A server that never answers must not hold the consumer that
+// is routing the message.
+func routeToDLQ(ctx context.Context, js jetstream.JetStream, prefix, originSubject string, data []byte, reason string, deliveries uint64, timeout time.Duration) error {
 	if js == nil {
 		return fmt.Errorf("dead letter queue unavailable: bus not connected")
 	}
 	subject := deadLetterSubject(prefix, originSubject)
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	msg := &nats.Msg{
 		Subject: subject,

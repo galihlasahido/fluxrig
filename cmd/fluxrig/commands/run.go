@@ -242,6 +242,7 @@ func runSession(ctx context.Context, cfg *config.RackConfig, logger *slog.Logger
 	}
 	opts.DLQEnabled = cfg.Snake.DLQEnabled
 	opts.DLQSubject = cfg.Snake.DLQSubject
+	opts.DLQPublishTimeout = limits.dlqPublish
 	opts.InitialRetryTimeout = offlineStartBound(cfg.Rack.MachineID, offlineStartTimeout)
 	natsBus := bus.NewNatsBus(cfg.Snake.StreamName)
 	busConnected := false

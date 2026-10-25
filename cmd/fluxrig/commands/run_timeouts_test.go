@@ -31,6 +31,7 @@ func validTimeouts() *config.RackConfig {
 	cfg.Rack.EnrollmentInterval = "2s"
 	cfg.Rack.HeartbeatInterval = "30s"
 	cfg.Snake.InactiveThreshold = "30s"
+	cfg.Snake.DLQPublishTimeout = "5s"
 	return cfg
 }
 
@@ -54,6 +55,7 @@ func TestParseRackTimeouts(t *testing.T) {
 	assert.Equal(t, 2*time.Second, got.enrollInterval)
 	assert.Equal(t, 30*time.Second, got.heartbeat)
 	assert.Equal(t, 30*time.Second, got.inactiveThreshold)
+	assert.Equal(t, 5*time.Second, got.dlqPublish)
 }
 
 // "0s" is not a typo: it is the documented sentinel that turns off the initial-retry
@@ -103,6 +105,7 @@ func TestParseRackTimeouts_ClampsNonPositiveToDefault(t *testing.T) {
 		"rack.enrollment_interval":      {func(c *config.RackConfig, v string) { c.Rack.EnrollmentInterval = v }, defaultEnrollInterval},
 		"rack.heartbeat_interval":       {func(c *config.RackConfig, v string) { c.Rack.HeartbeatInterval = v }, defaultHeartbeatInterval},
 		"snake.inactive_threshold":      {func(c *config.RackConfig, v string) { c.Snake.InactiveThreshold = v }, defaultInactiveThreshold},
+		"snake.dlq_publish_timeout":     {func(c *config.RackConfig, v string) { c.Snake.DLQPublishTimeout = v }, defaultDLQPublishTimeout},
 	}
 	for setting, tc := range cases {
 		for _, bad := range []string{"0s", "-1s"} {
@@ -126,6 +129,7 @@ func TestParseRackTimeouts_ClampsNonPositiveToDefault(t *testing.T) {
 					"rack.enrollment_interval":      got.enrollInterval,
 					"rack.heartbeat_interval":       got.heartbeat,
 					"snake.inactive_threshold":      got.inactiveThreshold,
+					"snake.dlq_publish_timeout":     got.dlqPublish,
 				}
 				assert.Equal(t, tc.want, fields[setting], "%s did not clamp %q to its documented default", setting, bad)
 			})
@@ -155,6 +159,7 @@ func TestParseRackTimeouts_NamesTheSettingThatIsWrong(t *testing.T) {
 		"rack.enrollment_interval":      func(c *config.RackConfig) { c.Rack.EnrollmentInterval = "soon" },
 		"rack.heartbeat_interval":       func(c *config.RackConfig) { c.Rack.HeartbeatInterval = "soon" },
 		"snake.inactive_threshold":      func(c *config.RackConfig) { c.Snake.InactiveThreshold = "soon" },
+		"snake.dlq_publish_timeout":     func(c *config.RackConfig) { c.Snake.DLQPublishTimeout = "soon" },
 	}
 	for setting, break_ := range cases {
 		t.Run(setting, func(t *testing.T) {

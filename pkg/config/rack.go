@@ -135,6 +135,7 @@ func LoadRack(path string) (*RackConfig, error) {
 	_ = k.Set("snake.offline_retry_interval", "5s")
 	_ = k.Set("snake.dlq_enabled", true)
 	_ = k.Set("snake.dlq_subject", "flux.dlq")
+	_ = k.Set("snake.dlq_publish_timeout", "5s")
 
 	// 2. Load from File
 	if path != "" {

@@ -17,28 +17,37 @@ name: CI
 on:
   # Globs rather than an explicit list: this file is published, and an enumerated
   # branch name says more about how the project is organised than CI needs to.
+  # Community pull requests land on dev in the public repository.
   push:
-    branches: ['main*', 'feat/*']
+    branches: ['main*', 'dev', 'feat/*']
   pull_request:
-    branches: ['main*']
+    branches: ['main*', 'dev']
 
 # One run per branch at a time. A push to a branch with an open PR fires both
 # the push and the pull_request event; without this the single runner runs
 # every commit twice, and a superseded commit keeps its place in the queue.
 # Both events share a group keyed on the branch, so the newer run cancels the
 # older one. Trunk runs are never cancelled: each merge keeps its own record.
+# The group also names the repository the branch comes from. Two forks can
+# use the same branch name, and a fork branch called main must not cancel a
+# trunk run.
 concurrency:
-  group: ci-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: ${{ !startsWith(github.ref_name, 'main') }}
+  group: ci-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ !startsWith(github.ref_name, 'main') && github.ref_name != 'dev' }}
 
 jobs:
   lint:
-    runs-on: [self-hosted, oci-int]
+    # The self-hosted runner serves only the private repositories, so the
+    # public repository runs on a GitHub-hosted runner. A pull request from a
+    # fork also runs on a hosted runner, in every repository: the self-hosted
+    # runner must never run a contributor's code.
+    runs-on: ${{ (github.repository == 'jaab-tech/fluxrig' || (github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository)) && 'ubuntu-latest' || fromJSON('["self-hosted","oci-int"]') }}
     steps:
       # The self-hosted runner keeps its workspace between jobs. A cached .git
       # that lacks an object fails every checkout with "missing blob object"
       # until someone deletes it, so a cache that fails its own check goes.
       - name: Drop a corrupt cached checkout
+        if: runner.environment == 'self-hosted'
         run: |
           if [ -d .git ] && ! git -c safe.directory="$PWD" fsck --connectivity-only --no-dangling >/dev/null 2>&1; then
             echo "The cached checkout is corrupt; removing it."
@@ -53,10 +62,14 @@ jobs:
       # showroom was the one CI did not run.
       - name: Check no internal-only references reach the mirror
         run: ./scripts/check_no_internal_leaks.sh
+      # A hosted runner installs the Go version that go.mod names. The
+      # self-hosted runner keeps the version it uses today. An empty input
+      # counts as unset.
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version: ${{ runner.environment == 'self-hosted' && '1.26' || '' }}
+          go-version-file: ${{ runner.environment != 'self-hosted' && 'go.mod' || '' }}
           cache: true
       - name: Run Linter
         uses: golangci/golangci-lint-action@v9
@@ -66,22 +79,31 @@ jobs:
           install-mode: "goinstall"
 
   test:
-    runs-on: [self-hosted, oci-int]
+    # The self-hosted runner serves only the private repositories, so the
+    # public repository runs on a GitHub-hosted runner. A pull request from a
+    # fork also runs on a hosted runner, in every repository: the self-hosted
+    # runner must never run a contributor's code.
+    runs-on: ${{ (github.repository == 'jaab-tech/fluxrig' || (github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository)) && 'ubuntu-latest' || fromJSON('["self-hosted","oci-int"]') }}
     steps:
       # The self-hosted runner keeps its workspace between jobs. A cached .git
       # that lacks an object fails every checkout with "missing blob object"
       # until someone deletes it, so a cache that fails its own check goes.
       - name: Drop a corrupt cached checkout
+        if: runner.environment == 'self-hosted'
         run: |
           if [ -d .git ] && ! git -c safe.directory="$PWD" fsck --connectivity-only --no-dangling >/dev/null 2>&1; then
             echo "The cached checkout is corrupt; removing it."
             find . -mindepth 1 -delete
           fi
       - uses: actions/checkout@v7
+      # A hosted runner installs the Go version that go.mod names. The
+      # self-hosted runner keeps the version it uses today. An empty input
+      # counts as unset.
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version: ${{ runner.environment == 'self-hosted' && '1.26' || '' }}
+          go-version-file: ${{ runner.environment != 'self-hosted' && 'go.mod' || '' }}
           cache: true
       - name: Run tests
         run: |
@@ -94,22 +116,31 @@ jobs:
           fail_ci_if_error: false
 
   build:
-    runs-on: [self-hosted, oci-int]
+    # The self-hosted runner serves only the private repositories, so the
+    # public repository runs on a GitHub-hosted runner. A pull request from a
+    # fork also runs on a hosted runner, in every repository: the self-hosted
+    # runner must never run a contributor's code.
+    runs-on: ${{ (github.repository == 'jaab-tech/fluxrig' || (github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository)) && 'ubuntu-latest' || fromJSON('["self-hosted","oci-int"]') }}
     steps:
       # The self-hosted runner keeps its workspace between jobs. A cached .git
       # that lacks an object fails every checkout with "missing blob object"
       # until someone deletes it, so a cache that fails its own check goes.
       - name: Drop a corrupt cached checkout
+        if: runner.environment == 'self-hosted'
         run: |
           if [ -d .git ] && ! git -c safe.directory="$PWD" fsck --connectivity-only --no-dangling >/dev/null 2>&1; then
             echo "The cached checkout is corrupt; removing it."
             find . -mindepth 1 -delete
           fi
       - uses: actions/checkout@v7
+      # A hosted runner installs the Go version that go.mod names. The
+      # self-hosted runner keeps the version it uses today. An empty input
+      # counts as unset.
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version: ${{ runner.environment == 'self-hosted' && '1.26' || '' }}
+          go-version-file: ${{ runner.environment != 'self-hosted' && 'go.mod' || '' }}
           cache: true
       - name: Build binaries
         run: |
@@ -129,22 +160,31 @@ jobs:
   # (test/e2e) and the hermetic Robot subset run nightly, and the full Robot
   # set gates a release.
   integration:
-    runs-on: [self-hosted, oci-int]
+    # The self-hosted runner serves only the private repositories, so the
+    # public repository runs on a GitHub-hosted runner. A pull request from a
+    # fork also runs on a hosted runner, in every repository: the self-hosted
+    # runner must never run a contributor's code.
+    runs-on: ${{ (github.repository == 'jaab-tech/fluxrig' || (github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository)) && 'ubuntu-latest' || fromJSON('["self-hosted","oci-int"]') }}
     steps:
       # The self-hosted runner keeps its workspace between jobs. A cached .git
       # that lacks an object fails every checkout with "missing blob object"
       # until someone deletes it, so a cache that fails its own check goes.
       - name: Drop a corrupt cached checkout
+        if: runner.environment == 'self-hosted'
         run: |
           if [ -d .git ] && ! git -c safe.directory="$PWD" fsck --connectivity-only --no-dangling >/dev/null 2>&1; then
             echo "The cached checkout is corrupt; removing it."
             find . -mindepth 1 -delete
           fi
       - uses: actions/checkout@v7
+      # A hosted runner installs the Go version that go.mod names. The
+      # self-hosted runner keeps the version it uses today. An empty input
+      # counts as unset.
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version: ${{ runner.environment == 'self-hosted' && '1.26' || '' }}
+          go-version-file: ${{ runner.environment != 'self-hosted' && 'go.mod' || '' }}
           cache: true
       # Direct go build, not `make build`: the Makefile's build target also
       # regenerates the OpenAPI spec, which needs swag. The e2e suite below
@@ -160,9 +200,13 @@ jobs:
       # The e2e harness waits for ports and clears them with lsof
       # (test/e2e/utils/e2e_utils.sh wait_for_port, and most segments). The
       # runner does not ship it. Guarded, so it costs nothing once the runner
-      # image carries it.
+      # image carries it. A hosted runner is not root, so it installs with sudo.
       - name: Ensure lsof
-        run: command -v lsof || (apt-get update && apt-get install -y lsof)
+        run: |
+          command -v lsof && exit 0
+          SUDO=""
+          [ "$(id -u)" -eq 0 ] || SUDO=sudo
+          $SUDO apt-get update && $SUDO apt-get install -y lsof
       - name: Offline e2e smoke segment
         run: |
           export FLUXRIG_E2E_SKIP_BUILD=1
